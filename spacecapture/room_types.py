@@ -132,6 +132,10 @@ def estimate_usage(graph, model=None):
             usage, source = best, "geometry_model"
         else:
             usage, source = None, "undecided"
-        space["usage_estimate"] = {"usage": usage, "source": source, "probabilities": p}
+        # 6㎡ 미만·문 3개 이상·욕실 확률 낮음 → 복도·홀일 가능성(힌트만, 확정 이름 아님).
+        # LH 학습 자료에서 이 조건의 공간 9개 중 3개가 욕실이라 확정하지 않는다(2026-11-26).
+        f = rows[i]
+        passage = usage is None and np.exp(f[FEATURES.index("log_area")]) < 6 and f[FEATURES.index("portal_count")] >= 3 and p["bathroom"] < .3
+        space["usage_estimate"] = {"usage": usage, "source": source, "probabilities": p, "passage_like": bool(passage)}
     return {"method": "room_type_mlp", "model_id": meta.get("id"), "threshold": threshold,
             "scope": "공간 크기·모양·연결로 추정한 용도 후보. 사진 속 사물 근거가 있으면 그것을 우선. 확정 아님."}

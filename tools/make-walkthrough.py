@@ -134,6 +134,68 @@ def tour(config, seg, step=.22, turn=np.radians(12), orbit_frames=30):
     return [(C, R, sid) for (C, R), sid in zip(frames, labels)], order
 
 
+def smooth_noise(rng, n, scale, corr=.9):
+    """천천히 변하는 잡음(AR(1)): 손떨림·노출 변화처럼 프레임 사이에 이어지는 흔들림."""
+    out = np.zeros(n); value = 0.
+    for i in range(n):
+        value = corr*value + np.sqrt(1-corr**2)*rng.normal(0, scale); out[i] = value
+    return out
+
+
+def handheld(poses, seed):
+    """손으로 들고 걸을 때의 위치·높이·기울기 흔들림을 포즈에 더한다(정답 포즈도 이 값)."""
+    rng = np.random.default_rng(seed+777); n = len(poses)
+    dx, dz = smooth_noise(rng, n, .025), smooth_noise(rng, n, .025)
+    dy = smooth_noise(rng, n, .06, .97)                      # 촬영 높이 1.45 ± 약 0.1m
+    roll, pitch, yaw = (smooth_noise(rng, n, np.radians(a)) for a in (2.5, 3., 2.))
+    out = []
+    for i, (C, R, sid) in enumerate(poses):
+        C = C + np.array([dx[i], dy[i], dz[i]])
+        cr, sr = np.cos(roll[i]), np.sin(roll[i]); cp, sp = np.cos(pitch[i]), np.sin(pitch[i]); cy, sy = np.cos(yaw[i]), np.sin(yaw[i])
+        Rz = np.array([[cr, -sr, 0], [sr, cr, 0], [0, 0, 1]]); Rx = np.array([[1, 0, 0], [0, cp, -sp], [0, sp, cp]])
+        Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+        out.append((C, R @ Ry @ Rx @ Rz, sid))  # 카메라 좌표계에서 작은 회전
+    return out
+
+
+def phone_effects(frames, poses, seed, focal, effects=("blur", "exposure", "noise", "distortion")):
+    """폰 영상의 화질 효과: 자동 노출·화이트밸런스 변화, 움직임 번짐, 센서 노이즈, 비네팅, 렌즈 왜곡."""
+    rng = np.random.default_rng(seed+999); n = len(frames)
+    gain = np.exp(smooth_noise(rng, n, .1, .95))            # 노출 약 ±10% (폰은 흰 벽이 날아가지 않게 노출을 잡는다)
+    wb = np.exp(np.stack([smooth_noise(rng, n, .025, .97) for _ in range(3)], 1))
+    h, w = frames[0].shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    r2 = ((xx-w/2)**2+(yy-h/2)**2)/((w/2)**2+(h/2)**2)
+    vignette = (1-.28*r2)[..., None]
+    k1 = -.06                                                # 약한 술통형 왜곡
+    xn, yn = (xx-w/2)/focal, (yy-h/2)/focal
+    factor = 1+k1*(xn**2+yn**2)
+    map_x, map_y = (xn*factor*focal+w/2).astype(np.float32), (yn*factor*focal+h/2).astype(np.float32)
+    out = []
+    for i, img in enumerate(frames):
+        a, b = poses[max(0, i-1)], poses[min(n-1, i+1)]
+        rot = np.degrees(np.arccos(np.clip((np.trace(a[1].T@b[1])-1)/2, -1, 1)))/2
+        move = np.linalg.norm(b[0]-a[0])/2
+        length = int(np.clip(rot*focal*np.pi/180*.15 + move*40, 1, 18))  # 셔터 동안 움직인 픽셀
+        f = img.astype(np.float32)
+        if length > 1 and "blur" in effects:
+            kernel = np.zeros((length, length), np.float32)
+            angle = rng.uniform(0, np.pi)
+            cx = cy = (length-1)/2
+            for t in np.linspace(-.5, .5, length*2):
+                kernel[int(round(cy+t*(length-1)*np.sin(angle))), int(round(cx+t*(length-1)*np.cos(angle)))] = 1
+            f = cv2.filter2D(f, -1, kernel/kernel.sum())
+        if "exposure" in effects:
+            f = f*gain[i]*wb[i]*vignette
+        if "distortion" in effects:
+            f = cv2.remap(f, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+        noise = rng.normal(0, 3.5, f.shape)
+        if "noise" in effects:
+            f += noise
+        out.append(np.clip(f, 0, 255).astype(np.uint8))
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan", type=int, default=227, help="LH 평면도 번호(manifest 순서)")
@@ -141,6 +203,8 @@ def main():
     parser.add_argument("--fps", type=float, default=3.)
     parser.add_argument("--style", default="interior", choices=["interior", "unique_noise"],
                         help="interior: 나무 마루·벽지·흰 천장(실제 집 느낌), unique_noise: 기존 알록달록 노이즈")
+    parser.add_argument("--phone", action="store_true",
+                        help="실제 폰 촬영 효과: 손떨림·높이·기울기 흔들림, 자동 노출·화이트밸런스, 움직임 번짐, 노이즈, 렌즈 왜곡")
     args = parser.parse_args()
     out = Path(args.out or ROOT/f"artifacts/walkthrough/lh-{args.plan:04d}"); out.mkdir(parents=True, exist_ok=True)
     plans = json.loads((LH/"manifest.json").read_text(encoding="utf-8"))["plans"]
@@ -149,6 +213,8 @@ def main():
     _, seg = auto_meters_per_pixel(image)
     config, _ = render_config(seg, seed=args.plan, room_views=12)
     poses, order = tour(config, seg)
+    if args.phone:
+        poses = handheld(poses, args.plan)
     config["poses"] = poses
     config["texture_style"] = args.style
     print(f"경로: 방 순서 {order}, 프레임 {len(poses)}개", flush=True)
@@ -157,7 +223,12 @@ def main():
     names = sorted((out/"photos").glob("listing_*.jpg"))
     first = cv2.imread(str(names[0])); h, w = first.shape[:2]
     writer = cv2.VideoWriter(str(out/"walkthrough.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), args.fps, (w, h))
-    for n in names: writer.write(cv2.imread(str(n)))
+    frames = [cv2.imread(str(n)) for n in names]
+    if args.phone:  # 정답 사진은 그대로 두고 영상 프레임에만 화질 효과
+        gt = json.loads((out/"property.gt.json").read_text(encoding="utf-8"))
+        frames = phone_effects(frames, poses, args.plan, gt["intrinsics"]["focal"])
+        for n, f in zip(names, frames): cv2.imwrite(str(n.with_name("phone_"+n.name)), f, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    for f in frames: writer.write(f)
     writer.release()
     print(json.dumps({"frames": len(names), "seconds": round(time.perf_counter()-started, 1), "video": str(out/"walkthrough.mp4"),
                       "duration_s": round(len(names)/args.fps, 1)}, ensure_ascii=False))

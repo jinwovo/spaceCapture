@@ -158,9 +158,12 @@ async function fetchScenes() {
   }
 }
 
+// 천장 높이를 측정(detected)했거나 사용자가 직접 입력(user)한 경우만 확정값으로 본다.
+const heightKnown = (r) => r.height_source === "detected" || r.height_source === "user";
+
 function cutHeightLocal(data) {
   const r = data.room;
-  return r.height_source === "detected" ? r.height - 0.12 : Math.min(2.1, r.height - 0.12);
+  return heightKnown(r) ? r.height - 0.12 : Math.min(2.1, r.height - 0.12);
 }
 
 async function loadScene(name) {
@@ -184,6 +187,10 @@ async function loadScene(name) {
   if (version !== sceneLoadVersion) return;
   current = { name, data, k: store.load(name, "calibration", 1) };
   world.scale.setScalar(current.k);
+  const userHeight = store.load(name, "ceiling", null);  // 사용자가 직접 입력한 천장 높이(m)
+  if (typeof userHeight === "number" && userHeight > 1.5 && userHeight < 6) {
+    data.room = { ...data.room, height: userHeight, height_source: "user", max: [data.room.max[0], data.room.min[1] + userHeight, data.room.max[2]] };
+  }
   room.build(data.room);
   room.updateLabels(current.k);
   if (data.property_graph) {
@@ -389,7 +396,9 @@ function updateRoomInfo() {
   const d = b.z1 - b.z0;
   $("dim-w").textContent = `${w.toFixed(2)}m`;
   $("dim-d").textContent = `${d.toFixed(2)}m`;
-  $("dim-h").textContent = `${b.h.toFixed(2)}m${data.room.height_source === "detected" ? "" : "*"}`;
+  $("dim-h").textContent = `${b.h.toFixed(2)}m${heightKnown(data.room) ? (data.room.height_source === "user" ? " (입력)" : "") : "*"}`;
+  $("ceiling-h").value = Math.round(data.room.height * 100);
+  $("ceiling-reset").hidden = data.room.height_source !== "user";
   const area = w * d;
   const boxSupported = data.layout?.room_box_supported !== false;
   $("space-info-title").textContent = boxSupported ? "공간 정보 · 구조 후보" : "관측 범위 · 도면 확정 보류";
@@ -397,7 +406,7 @@ function updateRoomInfo() {
   $("dim-d-label").textContent = boxSupported ? "세로" : "범위 세로";
   $("dim-area").textContent =
     `${data.layout ? "직사각형 가정 면적" : "바닥 면적"} ${area.toFixed(1)}㎡ (${(area / PYEONG).toFixed(1)}평)` +
-    (data.room.height_source === "detected" ? "" : " · *천장 높이는 가정값");
+    (heightKnown(data.room) ? "" : " · *천장 높이는 가정값 (아래에서 직접 입력 가능)");
   if (!boxSupported) $("dim-area").textContent = "바닥 면적 확정 보류 · 관측된 벽 후보만 표시합니다.";
 
   const el = $("scale-info");
@@ -770,3 +779,18 @@ if (import.meta.env.DEV) {
   }
   if (!scenes.length) toast("처리된 장면이 없어요. python -m spacecapture process 영상.mp4 로 만들어 보세요.", 6000);
 })();
+
+// 천장 높이 직접 입력: 천장이 충분히 보이지 않아 가정값(2.4m)일 때 줄자로 잰 값을 장면별로 저장한다.
+$("ceiling-save").onclick = () => {
+  const cm = Number($("ceiling-h").value);
+  if (!current.name || !(cm >= 180 && cm <= 500)) { toast("천장 높이는 180~500cm 사이로 입력해 주세요."); return; }
+  store.save(current.name, "ceiling", cm / 100);
+  toast(`천장 높이 ${cm}cm를 이 장면에 저장했어요.`);
+  loadScene(current.name);
+};
+$("ceiling-reset").onclick = () => {
+  if (!current.name) return;
+  store.save(current.name, "ceiling", null);
+  toast("입력한 천장 높이를 지우고 분석값으로 되돌렸어요.");
+  loadScene(current.name);
+};

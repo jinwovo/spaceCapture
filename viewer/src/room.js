@@ -115,7 +115,7 @@ export class Room {
     this.labels.width.element.textContent = fmtLen((r.max[0] - r.min[0]) * k);
     this.labels.depth.element.textContent = fmtLen((r.max[2] - r.min[2]) * k);
     const hText = fmtLen(r.height * k);
-    this.labels.height.element.textContent = r.height_source === "detected" ? hText : `${hText} (가정)`;
+    this.labels.height.element.textContent = r.height_source === "detected" ? hText : r.height_source === "user" ? `${hText} (입력)` : `${hText} (가정)`;
   }
 
   /** bounds in calibrated world meters */

@@ -63,6 +63,11 @@
             <div><span>높이</span><b id="dim-h">–</b></div>
           </div>
           <p class="area" id="dim-area"></p>
+          <div class="row ceiling-input">
+            <label>천장 높이 직접 입력 <span class="unit-input"><input id="ceiling-h" type="number" min="180" max="500" step="1" /> cm</span></label>
+            <button class="btn small" id="ceiling-save">적용</button>
+            <button class="btn small" id="ceiling-reset" hidden>되돌리기</button>
+          </div>
           <p class="scale" id="scale-info"></p>
           <ul class="notes" id="warnings"></ul>
           <details class="evidence"><summary>검사 근거와 미확인 항목</summary><div id="assessment-checks"></div></details>

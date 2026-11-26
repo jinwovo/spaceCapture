@@ -25,6 +25,7 @@ export function spaceNames(graph) {
       const p=s.usage_estimate?.probabilities??{};
       const best=Object.entries(p).filter(([k])=>USAGE_NAME[k]).sort((x,y)=>y[1]-x[1])[0];
       if (best && best[1]>=.5) name+=` (${USAGE_NAME[best[0]]}?)`;
+      else if (s.usage_estimate?.passage_like) name+=' (복도?)';
     }
     names[s.id]={name, estimated: !!USAGE_NAME[usage], area: area(s.polygon_xz)};
   }
