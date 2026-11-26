@@ -133,7 +133,7 @@ AGENTS.md       documento técnico detallado de traspaso (en coreano)
   - Los modelos de espacios, fusión de puertas y tipo de estancia se entrenaron con renders de planos públicos de LH (data.go.kr, sin restricción de uso indicada, indicador de derechos de autor "N").
   - Consulta con el proveedor antes de un entrenamiento o uso comercial. Ver [models/NOTICE.txt](models/NOTICE.txt).
 - Este repositorio **no** incluye conjuntos de datos de terceros, escenas renderizadas ni registros de experimentos.
-- La licencia del código propio de este proyecto aún no se ha elegido. Todos los derechos reservados hasta que se añada una licencia.
+- El código de este proyecto se publica bajo la [licencia MIT](LICENSE). Los componentes de terceros y las notas sobre datos de los pesos entrenados en `models/` mantienen sus propios términos.
 
 ## Hoja de ruta
 

@@ -129,7 +129,7 @@ AGENTS.md       detailed engineering hand-off (Korean)
   - The space, door-merge and room-type models learned from renders of LH public floor plans (data.go.kr, no usage restriction stated, copyright-cleared flag "N").
   - Check with the provider before commercial training. See [models/NOTICE.txt](models/NOTICE.txt).
 - Third-party datasets, rendered scenes and experiment artifacts are **not** included in this repository.
-- The license for this project's own code has not been chosen yet. All rights reserved until a license is added.
+- This project's code is released under the [MIT License](LICENSE). Third-party components and the data notes for the trained weights in `models/` keep their own terms.
 
 ## Roadmap
 
