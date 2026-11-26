@@ -36,3 +36,18 @@ class WalkthroughSfmTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InteriorTextureTests(unittest.TestCase):
+    def test_floor_wall_ceiling_look_like_a_home(self):
+        from spacecapture.synth_property import _texture_interior
+        floor = _texture_interior({"axis": 1, "pos": 0., "lo": 0, "hi": 2, "bottom": 0, "top": 2}, 1, 3)
+        wall = _texture_interior({"axis": 0, "pos": 0., "lo": 0, "hi": 3, "bottom": 0, "top": 2.3}, 2, 3)
+        ceiling = _texture_interior({"axis": 1, "pos": 2.3, "lo": 0, "hi": 2, "bottom": 0, "top": 2}, 3, 3)
+        for image in (floor, wall, ceiling):
+            self.assertEqual(image.dtype, np.uint8)
+        b, g, r = floor.reshape(-1, 3).mean(0)
+        self.assertGreater(r, b)                       # 나무 바닥: 붉은 갈색(BGR)
+        self.assertGreater(wall.mean(), 180)           # 밝은 벽지
+        self.assertGreater(ceiling.mean(), 225)        # 흰 천장
+        self.assertFalse(np.array_equal(_texture_interior({"axis": 0, "pos": 0., "lo": 0, "hi": 3, "bottom": 0, "top": 2.3}, 9, 3), wall))  # 면마다 다른 무늬

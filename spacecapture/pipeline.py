@@ -171,7 +171,7 @@ def process(
     arrays = arrays_from_reconstruction(rec)
     al = compute_alignment(arrays, rec, work / "frames", marker_size=(marker_mm / 1000.0) if marker_mm else None,
                            marker_dict=marker_dict, camera_height=camera_height, log=log)
-    if photos or extra_photos:
+    if True:  # 영상도 적용: 벽만 보이는 구간이 통째로 다른 높이·위치에 붙은 사례(2~5.4m, 2026-11-26)
         # 제외 후 다시 정렬하면 바닥 평면이 바뀌어 다른 잘못 놓인 묶음이 드러날 수 있다(LH 학습 자료 lh-0035).
         # 변화가 없을 때까지 최대 3회 반복한다.
         for _round in range(3):

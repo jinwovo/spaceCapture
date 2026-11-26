@@ -11,7 +11,7 @@
 > [!IMPORTANT]
 > **Prototipo de investigación.** Las cifras de precisión de abajo provienen de dos fuentes, ambas reconstruidas con el pipeline real: renders sintéticos de planos reales de vivienda pública coreana (LH) y un vídeo sintético de una habitación. **Todavía no se ha validado con fotos reales de anuncios ni con vídeos reales de móvil.** Los resultados son candidatos para revisión, no planos certificados.
 
-![Visor 3D: vivienda reconstruida a partir de un vídeo recorriéndola y fotos adicionales, con tipos de estancia estimados](docs/images/viewer-mixed.jpg)
+![Vista cenital de una vivienda completa reconstruida con Gaussian splats a partir de un solo vídeo, con espacios, puertas y tipos de estancia](docs/images/viewer-home.jpg)
 
 ## Qué hace
 
@@ -32,8 +32,8 @@ Igual que un coche construye una imagen 3D de su entorno con sus cámaras, space
 <td width="50%"><img src="docs/images/splat-room.jpg" alt="Habitación con Gaussian splatting y medidas"><br><sub>Habitación con Gaussian splatting, medidas y herramientas de muebles</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/walkthrough-frames.jpg" alt="Fotogramas de un vídeo sintético recorriendo la vivienda"><br><sub>Fotogramas de un vídeo sintético recorriendo toda la vivienda (entrada de prueba)</sub></td>
-<td><img src="docs/images/walkthrough-overlay.jpg" alt="Espacios reconstruidos frente a la verdad de referencia"><br><sub>Reconstrucción con vídeo + fotos frente a la referencia: espacios, puertas y cámaras</sub></td>
+<td><img src="docs/images/walkthrough-frames.jpg" alt="Fotogramas de un vídeo sintético recorriendo la vivienda"><br><sub>Fotogramas de un vídeo sintético con papel pintado blanco y suelo de madera (entrada de prueba)</sub></td>
+<td><img src="docs/images/walkthrough-overlay.jpg" alt="Espacios reconstruidos frente a la verdad de referencia"><br><sub>Reconstrucción del vídeo frente a la referencia: espacios, puertas y recorrido de la cámara</sub></td>
 </tr>
 </table>
 
@@ -61,6 +61,7 @@ flowchart LR
 |---|---|
 | Vídeo de una habitación con marcador (4,2 × 3,6 m) | error de ancho/fondo **+2,8 / +3,1 cm**, RMSE de trayectoria ≈ 0,2 cm |
 | Vídeo recorriendo toda la vivienda (162 s, 5 estancias) | **465 / 469** fotogramas registrados, error de cámara 0,39 cm |
+| Misma vivienda, materiales realistas (papel pintado blanco liso, suelo de madera) | 5 / 5 espacios, las 4 puertas encontradas, IoU 0,687. Los fotogramas de pared lisa son más difíciles: se conservan 328 de 477 tras los controles de pose |
 | Vídeo (3 estancias) + 42 fotos (las otras 2) | **319 / 323** registradas, las 42 fotos en el mismo sistema de coordenadas, error de cámara **0,16 cm**, IoU de espacios 0,733 |
 | Fotos de 26 viviendas no vistas en el entrenamiento (estructuras de planos LH) | IoU medio de espacios **0,833**, exhaustividad / precisión de puertas **0,85 / 0,87** |
 | Tipo de estancia (salón / dormitorio / baño / otro), 90 espacios | **84 %** de acierto; **92 %** en el 73 % de espacios que etiqueta |

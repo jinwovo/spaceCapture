@@ -357,7 +357,7 @@ def run_sfm(
         raise RuntimeError("카메라 위치를 복원하지 못했어요. 더 천천히, 겹치게 다시 촬영해 주세요.")
     if not unordered:
         drop_trajectory_outliers(best, log)  # 영상 프레임만 대상(이름 순서 = 시간 순서)
-    if unordered or mixed:
+    if True:  # 영상도: 무늬 없는 벽만 본 프레임이 관측점 0~3개로 등록되는 경우가 있다(실내 재질 걷기 영상, 2026-11-26)
         # Removing a pose deletes points only it supported, which can leave other
         # poses below the support/focal criteria; repeat until stable (LH plan
         # 227, 2026-11-10: three wrong poses survived a single pass).

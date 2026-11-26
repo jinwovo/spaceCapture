@@ -101,6 +101,70 @@ def _texture(width, height, seed):
     return image
 
 
+def _noise(rng, h, w, scales):
+    out = np.zeros((h, w), np.float32)
+    for cell, weight in scales:
+        layer = rng.normal(0, 1, (max(2, h//cell+2), max(2, w//cell+2))).astype(np.float32)
+        out += weight*cv2.resize(layer, (w, h), interpolation=cv2.INTER_CUBIC)
+    return out
+
+
+def _texture_interior(plane, seed, house_seed=0, ppm=180):
+    """실제 집처럼 보이는 재질: 나무 마루 바닥, 미색 벽지 벽(걸레받이·액자·콘센트), 흰 천장.
+
+    무늬는 면마다 다른 난수로 만들어 반복이 없다(반복 무늬는 사진 사이 오매칭을 만든다).
+    색은 BGR. 벽은 v=0이 바닥 쪽이다. (2026-11-26, 무지개색 노이즈 대신 쓰는 시험 장면 재질)
+    """
+    rng = np.random.default_rng(seed)
+    house = np.random.default_rng(house_seed)
+    width, height = plane["hi"]-plane["lo"], plane["top"]-plane["bottom"]
+    w, h = max(32, round(width*ppm)), max(32, round(height*ppm))
+    if plane["axis"] == 1 and plane["pos"] < .05:  # 바닥: 엇갈린 나무 마루
+        tone = house.choice([[70, 120, 170], [95, 145, 190], [55, 95, 140], [120, 165, 200]]).astype(np.float32)
+        image = np.zeros((h, w, 3), np.float32)
+        plank_w = int(.14*ppm); y = -int(rng.integers(0, plank_w))
+        while y < h:
+            x = -int(rng.integers(0, int(1.4*ppm)))
+            while x < w:
+                length = int(rng.uniform(.9, 1.8)*ppm)
+                y0, y1, x0, x1 = max(0, y), min(h, y+plank_w), max(0, x), min(w, x+length)
+                if y1 > y0 and x1 > x0:
+                    ph, pw = y1-y0, x1-x0
+                    grain = cv2.resize(rng.normal(0, 1, (max(2, ph//2), max(2, pw//40))).astype(np.float32), (pw, ph))
+                    grain += .5*cv2.resize(rng.normal(0, 1, (max(2, ph//6), max(2, pw//12))).astype(np.float32), (pw, ph))
+                    image[y0:y1, x0:x1] = tone*rng.uniform(.85, 1.12) + 9*grain[..., None]
+                    image[y0:y1, x0:x0+2] *= .6
+                x += length
+            image[max(0, y):max(0, y)+2] *= .6
+            y += plank_w
+    elif plane["axis"] == 1:  # 천장·문 위 인방 아랫면: 흰색
+        image = np.full((h, w, 3), 238., np.float32) + 2.5*_noise(rng, h, w, ((40, 1.), (6, .6)))[..., None]
+    else:  # 벽: 미색 실크 벽지 + 걸레받이 + 액자·콘센트
+        paper = house.choice([[220, 226, 232], [216, 220, 222], [200, 214, 226], [208, 220, 214]]).astype(np.float32)
+        image = paper*rng.uniform(.97, 1.03) + _noise(rng, h, w, ((60, 2.5), (12, 3.), (3, 3.)))[..., None]
+        base_h = int(.08*ppm)
+        image[:base_h] = np.array([235, 238, 240], np.float32) + rng.normal(0, 1.5, (min(base_h, h), w, 1))
+        image[base_h:base_h+2] *= .82
+        for _ in range(int(rng.poisson(max(.3, width*.35)))):  # 액자
+            fw, fh = int(rng.uniform(.3, .8)*ppm), int(rng.uniform(.3, .6)*ppm)
+            cx, cy = int(rng.uniform(0, max(1, w-fw))), int(rng.uniform(1.2, 1.7)*ppm)
+            if cy+fh >= h or cx+fw >= w: continue
+            palette = np.array([[70, 90, 110], [150, 170, 190], [110, 130, 120], [180, 190, 200], [60, 70, 80], [140, 120, 100]], np.float32)
+            art = cv2.resize(palette[rng.integers(0, len(palette), (3, 4))]*rng.uniform(.8, 1.15, (3, 4, 1)).astype(np.float32),
+                             (fw-16, fh-16), interpolation=cv2.INTER_CUBIC)  # 차분한 색 그림
+            art += 12*_noise(rng, fh-16, fw-16, ((8, 1.), (3, .5)))[..., None]
+            image[cy:cy+fh, cx:cx+fw] = np.array([40, 45, 50], np.float32) if rng.random() < .6 else np.array([90, 140, 180], np.float32)
+            image[cy+8:cy+fh-8, cx+8:cx+fw-8] = art
+        for _ in range(int(rng.poisson(max(.2, width*.25)))):  # 콘센트·스위치
+            sw, sh = int(.08*ppm), int(.12*ppm)
+            cx, cy = int(rng.uniform(0, max(1, w-sw))), int((rng.choice([.3, 1.15]))*ppm)
+            if cy+sh >= h or cx+sw >= w: continue
+            image[cy:cy+sh, cx:cx+sw] = 245.
+            image[cy:cy+sh, cx:cx+1] = image[cy:cy+sh, cx+sw-1:cx+sw] = 170.
+            image[cy:cy+1, cx:cx+sw] = image[cy+sh-1:cy+sh, cx:cx+sw] = 170.
+    return np.clip(image, 0, 255).astype(np.uint8)
+
+
 def _texture_unique(width, height, seed):
     """면마다 고유한 다중 스케일 노이즈·불규칙 얼룩 텍스처.
 
@@ -167,8 +231,12 @@ def generate_property(output: Path, kind="two_rooms", seed=0, render_photos=True
     width,height = 960,640
     focal = width/(2*math.tan(math.radians(78)/2))
     photos = []
-    make_texture = _texture_unique if config.get("texture_style") == "unique_noise" else _texture
-    textures = [make_texture(p["hi"]-p["lo"],p["top"]-p["bottom"],seed*100+i) for i,p in enumerate(planes)] if render_photos else []
+    style = config.get("texture_style")
+    if style == "interior":
+        textures = [_texture_interior(p,seed*100+i,house_seed=seed) for i,p in enumerate(planes)] if render_photos else []
+    else:
+        make_texture = _texture_unique if style == "unique_noise" else _texture
+        textures = [make_texture(p["hi"]-p["lo"],p["top"]-p["bottom"],seed*100+i) for i,p in enumerate(planes)] if render_photos else []
     if render_photos:
         (output/"photos").mkdir(exist_ok=True)
     if render_photos:
@@ -206,6 +274,8 @@ def generate_property(output: Path, kind="two_rooms", seed=0, render_photos=True
                 mask=face==i
                 axis=plane["axis"]; u,v=(2,1) if axis==0 else (0,1) if axis==2 else (0,2)
                 color[mask]=_bilinear(textures[i],(pixels[mask,u]-plane["lo"])*180,(pixels[mask,v]-plane["bottom"])*180)
+            if style == "interior":
+                color[face<0]=(225,228,230)  # 면 사이로 빠진 광선(모서리 틈)은 검게 두지 않고 벽색으로
             image=cv2.GaussianBlur(color.reshape(height,width,3),(0,0),.55)
             ok,encoded=cv2.imencode('.jpg',np.clip(image,0,255).astype(np.uint8),[cv2.IMWRITE_JPEG_QUALITY,95])
             if not ok: raise RuntimeError("합성 사진 저장에 실패했어요.")

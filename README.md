@@ -11,7 +11,7 @@
 > [!IMPORTANT]
 > **Research prototype.** All accuracy numbers below come from synthetic renders of real Korean public-housing floor plans and a synthetic room video, reconstructed with the real pipeline. **It has not yet been validated on real listing photos or real phone videos.** Treat outputs as review candidates, not certified floor plans.
 
-![3D viewer: a home reconstructed from a walk-through video plus extra photos, with estimated room types](docs/images/viewer-mixed.jpg)
+![Top view of a whole home reconstructed as Gaussian splats from one walk-through video, with detected spaces, doors and room types](docs/images/viewer-home.jpg)
 
 ## What it does
 
@@ -32,8 +32,8 @@ Like a car that builds a 3D picture of its surroundings from its cameras, spaceC
 <td width="50%"><img src="docs/images/splat-room.jpg" alt="Gaussian splat room with measurements"><br><sub>Gaussian-splat room with measured dimensions and furniture tools</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/walkthrough-frames.jpg" alt="Frames of a synthetic walk-through video"><br><sub>Frames from a synthetic whole-home walk-through video (test input)</sub></td>
-<td><img src="docs/images/walkthrough-overlay.jpg" alt="Reconstructed spaces vs ground truth"><br><sub>Video + photos reconstruction vs ground truth: spaces, doors, cameras</sub></td>
+<td><img src="docs/images/walkthrough-frames.jpg" alt="Frames of a synthetic walk-through video"><br><sub>Frames from a synthetic walk-through video: white wallpaper, wood floor (test input)</sub></td>
+<td><img src="docs/images/walkthrough-overlay.jpg" alt="Reconstructed spaces vs ground truth"><br><sub>Walk-through reconstruction vs ground truth: spaces, doors, camera path</sub></td>
 </tr>
 </table>
 
@@ -61,6 +61,7 @@ flowchart LR
 |---|---|
 | Single room video with marker (4.2 × 3.6 m) | width/depth error **+2.8 / +3.1 cm**, camera trajectory RMSE ≈ 0.2 cm |
 | Whole-home walk-through video (162 s, 5 rooms) | **465 / 469** frames registered, camera error 0.39 cm |
+| Same home, realistic materials (plain white wallpaper, wood floor) | 5 / 5 spaces, all 4 doors found, room IoU 0.687. Plain-wall frames are harder: 328 of 477 frames kept after pose checks |
 | Video (3 rooms) + 42 photos (other 2 rooms) | **319 / 323** registered, all 42 photos in the same frame, camera error **0.16 cm**, room IoU 0.733 |
 | Photo sets of 26 unseen houses (LH floor-plan structures) | mean room IoU **0.833**, door recall / precision **0.85 / 0.87** |
 | Room type (living / bedroom / bathroom / other), 90 spaces | **84 %** accuracy; **92 %** on the 73 % of spaces it labels |

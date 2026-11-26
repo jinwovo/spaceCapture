@@ -139,6 +139,8 @@ def main():
     parser.add_argument("--plan", type=int, default=227, help="LH 평면도 번호(manifest 순서)")
     parser.add_argument("--out", default=None)
     parser.add_argument("--fps", type=float, default=3.)
+    parser.add_argument("--style", default="interior", choices=["interior", "unique_noise"],
+                        help="interior: 나무 마루·벽지·흰 천장(실제 집 느낌), unique_noise: 기존 알록달록 노이즈")
     args = parser.parse_args()
     out = Path(args.out or ROOT/f"artifacts/walkthrough/lh-{args.plan:04d}"); out.mkdir(parents=True, exist_ok=True)
     plans = json.loads((LH/"manifest.json").read_text(encoding="utf-8"))["plans"]
@@ -148,6 +150,7 @@ def main():
     config, _ = render_config(seg, seed=args.plan, room_views=12)
     poses, order = tour(config, seg)
     config["poses"] = poses
+    config["texture_style"] = args.style
     print(f"경로: 방 순서 {order}, 프레임 {len(poses)}개", flush=True)
     generate_property(out, config=config, render_photos=True, seed=args.plan, log=lambda *_: None,
                       truth_metadata={"purpose": "집 전체 걷기 영상 검증", "walk_order": order, "fps": args.fps})
