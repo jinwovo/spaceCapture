@@ -151,8 +151,67 @@ function planModel(THREE, plan, height) {
   return group;
 }
 
-export function structureModel(THREE, graph, height=2.4, plan=null) {
-  if (plan?.walls?.length) return planModel(THREE, plan, height);
+// 인식한 가구를 테슬라 화면처럼 깔끔한 모형으로 다시 그린다. box3d(크기·방향 맞춤)가 믿을 만한 것만.
+// 로컬 좌표: 가로 x, 깊이 z(+z가 앞), 바닥 y=0. 앞쪽은 front_xz(벽 반대쪽).
+const FURN_COLOR={fabric:0xaeb5bf,soft:0xeef0f2,wood:0xc4a27a,dark:0x2f3237,white:0xf3f3f1,metal:0x9aa1a9};
+function furnitureModel(THREE, obj) {
+  const b=obj.box3d, [w,h,d]=b.size, g=new THREE.Group();
+  const mats={}; const mat=(k)=>mats[k]??=new THREE.MeshStandardMaterial({color:FURN_COLOR[k],roughness:.85});
+  const part=(k,x0,y0,z0,x1,y1,z1)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),mat(k)); m.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2); g.add(m); };
+  const W=w/2, D=d/2, leg=(k,top,t=.04)=>{ for (const sx of [-1,1]) for (const sz of [-1,1]) part(k,sx*(W-t)-t/2,0,sz*(D-t)-t/2,sx*(W-t)+t/2,top,sz*(D-t)+t/2); };
+  switch (obj.class) {
+    case 'bed': {
+      const frame=Math.min(.3,h*.55);
+      part('wood',-W,0,-D,W,frame,D);                       // 받침
+      part('soft',-W+.03,frame,-D+.04,W-.03,h,D-.02);         // 매트리스
+      part('wood',-W,0,-D-.06,W,Math.max(h+.45,.9),-D);       // 머리판(뒤쪽 벽)
+      for (const sx of [-1,1]) part('white',sx*W*.5-W*.36,h,-D+.1,sx*W*.5+W*.36,h+.1,-D+.45);  // 베개
+      part('fabric',-W+.02,h-.005,-D+.55,W-.02,h+.03,D-.01);  // 이불
+      break; }
+    case 'couch': {
+      const seat=Math.min(.45,h*.55), arm=Math.min(.2,w*.12);
+      part('fabric',-W,0,-D,W,seat,D);
+      part('fabric',-W,0,-D,W,h,-D+Math.min(.22,d*.3));       // 등받이
+      for (const sx of [-1,1]) part('fabric',sx>0?W-arm:-W,0,-D,sx>0?W:-W+arm,seat+.18,D);
+      part('soft',-W+arm,seat,-D+.22,W-arm,seat+.08,D-.04);   // 방석
+      break; }
+    case 'chair': {
+      const seat=Math.min(.47,h*.5);
+      leg('metal',seat-.05,.03);
+      part('fabric',-W,seat-.06,-D,W,seat,D);
+      part('fabric',-W+.03,seat,-D,W-.03,h,-D+.06);           // 등받이
+      break; }
+    case 'dining table': case 'bench': {
+      leg('wood',h-.04,.05);
+      part('wood',-W,h-.04,-D,W,h,D);
+      break; }
+    case 'tv': {
+      part('dark',-W,b.bottom,-D,W,b.bottom+h,D);
+      if (b.bottom>.25) part('dark',-.04,b.bottom-.12,-.04,.04,b.bottom,.04);
+      break; }
+    case 'refrigerator': {
+      part('white',-W,0,-D,W,h,D);
+      part('metal',-W+.02,h*.62,D,W-.02,h*.62+.01,D+.005);    // 문 경계
+      part('metal',W-.08,h*.68,D,W-.06,h*.9,D+.03);           // 손잡이
+      break; }
+    case 'toilet': {
+      part('white',-W*.8,0,-D+.18,W*.8,h*.55,D);              // 몸체
+      part('white',-W,h*.55,-D,W,h,-D+.18);                   // 물탱크(뒤)
+      break; }
+    default: part('white',-W,0,-D,W,h,D);
+  }
+  const [fx,fz]=b.front_xz??[0,1];
+  g.rotation.y=Math.atan2(fx,fz);
+  g.position.set(b.center[0],obj.class==='tv'?0:b.bottom,b.center[2]);
+  return g;
+}
+
+export function structureModel(THREE, graph, height=2.4, plan=null, objects=null) {
+  if (plan?.walls?.length) {
+    const group=planModel(THREE, plan, height);
+    for (const o of objects??[]) if (o.box3d?.display??o.box3d?.reliable) group.add(furnitureModel(THREE,o));
+    return group;
+  }
   const group=new THREE.Group();
   const doors=graph.portals.filter(p=>p.status==='image_supported');
   const wallMat=new THREE.MeshStandardMaterial({color:0xf3f1ec,roughness:.9,side:THREE.DoubleSide,transparent:true,opacity:.92});

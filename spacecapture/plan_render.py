@@ -21,7 +21,7 @@ COLORS = {"bg": "#ffffff", "wall": "#222222", "wood": "#e9dcc6", "wood_line": "#
           "tile_line": "#aeb3b8", "text": "#1d1d1d", "sub": "#6b6b6b", "dim": "#555555", "furniture": "#8a8a8a",
           "door": "#444444"}
 USAGE_NAME = {"bathroom": "욕실", "bedroom": "침실", "living": "거실", "kitchen": "주방"}
-FURNITURE = {"bed": (1.5, 2.0), "couch": (2.0, .9), "dining table": (1.4, .8), "toilet": (.42, .68), "sink": (.55, .45),
+FURNITURE = {"chair": (.5, .5), "bed": (1.5, 2.0), "couch": (2.0, .9), "dining table": (1.4, .8), "toilet": (.42, .68), "sink": (.55, .45),
              "refrigerator": (.9, .75), "oven": (.6, .6), "tv": (1.2, .12), "microwave": (.5, .4)}
 
 
@@ -70,23 +70,18 @@ def build_plan(scene):
     for r in model["rooms"]:
         rooms.append({"id": r["id"], "outline": r["interior_polygon_xz"], "area_m2": r["area_m2"], "usage": r["usage"],
                       "anchor": r["anchor_xz"], "bbox": r["bbox_xz"], "inradius": r.get("inradius_m", 1.), "grid_bbox": [*np.min(r["polygon_xz"], 0), *np.max(r["polygon_xz"], 0)]})
-    graph = scene.get("property_graph") or {}
-    usage_by_id = {s["id"]: [u["usage"] for u in s.get("usage_candidates", [])] for s in graph.get("spaces", [])}
-    def room_at(x, z, usage):
-        for r in rooms:
-            if usage in usage_by_id.get(r["id"], []) and cv2.pointPolygonTest(np.asarray(r["outline"], np.float32), (float(x), float(z)), False) >= 0:
-                return True
-        return False
     objects = []
-    # 가구 아이콘도 용도 후보와 같은 강한 근거(사진 3장·점수 0.6)만 그린다. 주방 가전·세면대는 오검출이
-    # 잦아(TUM 사무실: 수납장→냉장고, 접시→싱크대) 해당 공간에 주방·욕실 후보가 있을 때만 그린다.
+    # 여러 사진으로 크기·방향을 맞춘 가구 중 표시 판정(object_boxes.mark_display)을 통과한 것만 그린다.
     for o in (scene.get("objects") or {}).get("instances", []):
-        if o["class"] not in FURNITURE or o.get("view_count", 0) < 3 or o.get("max_score", 0) < .6:
+        box = o.get("box3d")
+        if o["class"] not in FURNITURE or not box or not box.get("display", box.get("reliable")):
             continue
-        x, z = o["position"][0], o["position"][2]
-        if o["class"] in ("refrigerator", "oven", "microwave") and not room_at(x, z, "kitchen"): continue
-        if o["class"] == "sink" and not (room_at(x, z, "kitchen") or room_at(x, z, "bathroom")): continue
-        objects.append({"class": o["class"], "label": o["label"], "x": x, "z": z})
+        if box:  # 여러 사진으로 맞춘 실제 크기·방향
+            fx, fz = box.get("front_xz") or [0, 1]
+            objects.append({"class": o["class"], "label": o["label"], "x": box["center"][0], "z": box["center"][2],
+                            "w": box["size"][0], "d": box["size"][2], "angle": math.degrees(math.atan2(fx, fz))})
+            continue
+        # 상자를 맞추지 못한 사물은 크기·방향을 모르므로 아이콘을 그리지 않는다(고정 크기 아이콘은 오해를 부름)
     pts = np.array([q for w in model["walls"] for q in (w["rect_xz"][:2], w["rect_xz"][2:])] +
                    [q for r in rooms for q in r["outline"]], float)
     return {"rooms": rooms, "walls": [w["rect_xz"] for w in model["walls"]], "doors": model["doors"], "patches": model.get("floor_patches", []),
@@ -140,11 +135,10 @@ def render(scene, out_dir: Path, title=None):
         prims.append(("poly", [P(x0, z0), P(x1, z0), P(x1, z1), P(x0, z1)], "wood"))
     for u in plan["unobserved"]:
         prims.append(("poly", [P(x, z) for x, z in u], "hatch"))
+    for o in plan["objects"]:
+        prims.append(("furniture", o["class"], P(o["x"], o["z"]), (o["w"]*s, o["d"]*s), o["angle"]))
     # 벽 사각형을 한 경로로 그려(같은 방향 부분 경로의 합집합) 사각형 사이 이음선이 생기지 않게 한다
     prims.append(("walls", [[P(x0, z0), P(x1, z0), P(x1, z1), P(x0, z1)] for x0, z0, x1, z1 in plan["walls"]]))
-    for o in plan["objects"]:
-        w, d = FURNITURE[o["class"]]
-        prims.append(("furniture", o["class"], P(o["x"], o["z"]), (w*s, d*s)))
     for d in plan["doors"]:
         if not d["leaf"]:
             continue
@@ -230,6 +224,8 @@ def _furniture_shapes(kind, center, size):
         for dx in (-.3, .3):
             for dy in (-1, 1):
                 rects.append((cx+dx*w-w*.11, cy+dy*(h/2+h*.18)-h*.14, w*.22, h*.28, 4))
+    elif kind == "chair":
+        rects = [(x0, y0+h*.15, w, h*.85, 4), (x0+w*.05, y0, w*.9, h*.18, 3)]
     elif kind in ("refrigerator", "oven", "microwave"):
         rects.append((x0+w*.1, y0+h*.1, w*.8, h*.8, 2))
     return rects, circles
@@ -259,10 +255,12 @@ def _svg(prims, W, H):
             body.append(f'<path d="M{lx:.1f} {ly:.1f} A{r:.1f} {r:.1f} 0 0 {sweep} {ox_:.1f} {oy_:.1f}" fill="none" stroke="{COLORS["door"]}" stroke-width="1.2" stroke-dasharray="4 3"/>')
         elif p[0] == "furniture":
             rects, circles = _furniture_shapes(p[1], p[2], p[3])
+            body.append(f'<g transform="rotate({-p[4]:.1f} {p[2][0]:.1f} {p[2][1]:.1f})">')
             for x, y, w, h, rr in rects:
-                body.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="{rr}" fill="#fafafa" fill-opacity=".55" stroke="{COLORS["furniture"]}" stroke-width="1.4"/>')
+                body.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="{rr}" fill="#fafafa" stroke="{COLORS["furniture"]}" stroke-width="1.4"/>')
             for x, y, rx, ry in circles:
                 body.append(f'<ellipse cx="{x:.1f}" cy="{y:.1f}" rx="{rx:.1f}" ry="{ry:.1f}" fill="#fafafa" stroke="{COLORS["furniture"]}" stroke-width="1.4"/>')
+            body.append('</g>')
         elif p[0] == "stroke":
             body.append(f'<polygon points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in p[1])}" fill="none" stroke="{COLORS["wall"]}" stroke-width="{p[2]:.1f}" stroke-linejoin="miter"/>')
         elif p[0] == "line":
@@ -320,12 +318,15 @@ def _png(prims, W, H, path):
             a0 = math.degrees(math.atan2(ly-hy, lx-hx)); a1 = math.degrees(math.atan2(oy_-hy, ox_-hx))
             if (a1-a0) % 360 > 180: a0, a1 = a1, a0
             draw.arc([(hx-r)*k, (hy-r)*k, (hx+r)*k, (hy+r)*k], a0, a1, fill=COLORS["door"], width=k)
-        elif p[0] == "furniture":
+        elif p[0] == "furniture":  # 투명 층에 그린 뒤 가구 방향만큼 돌려 합성
             rects, circles = _furniture_shapes(p[1], p[2], p[3])
+            layer = Image.new("RGBA", img.size, (0, 0, 0, 0)); ld = ImageDraw.Draw(layer)
             for x, y, w, h, rr in rects:
-                draw.rounded_rectangle([x*k, y*k, (x+w)*k, (y+h)*k], radius=rr*k, outline=COLORS["furniture"], width=int(1.4*k))
+                ld.rounded_rectangle([x*k, y*k, (x+w)*k, (y+h)*k], radius=rr*k, fill=(250, 250, 250, 255), outline=COLORS["furniture"], width=int(1.4*k))
             for x, y, rx, ry in circles:
-                draw.ellipse([(x-rx)*k, (y-ry)*k, (x+rx)*k, (y+ry)*k], outline=COLORS["furniture"], width=int(1.4*k), fill="#fafafa")
+                ld.ellipse([(x-rx)*k, (y-ry)*k, (x+rx)*k, (y+ry)*k], outline=COLORS["furniture"], width=int(1.4*k), fill="#fafafa")
+            if abs(p[4]) > .1: layer = layer.rotate(p[4], center=(p[2][0]*k, p[2][1]*k), resample=Image.BICUBIC)
+            img.paste(layer, (0, 0), layer)
         elif p[0] == "stroke":
             pts = S(p[1]); w = max(1, int(p[2]*k))
             draw.line(pts+[pts[0], pts[1]], fill=COLORS["wall"], width=w, joint="curve")

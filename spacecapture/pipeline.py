@@ -355,6 +355,10 @@ def _write_scene(scene_dir: Path, scene: dict) -> None:
         from .plan_model import build as build_floorplan
         scene["floorplan"] = build_floorplan(scene)
         if scene["floorplan"] is None: scene.pop("floorplan")
+        else:  # 가구 상자의 앞쪽(벽 반대쪽) 방향
+            from .object_boxes import mark_display, orient
+            orient((scene.get("objects") or {}).get("instances"), [w["rect_xz"] for w in scene["floorplan"]["walls"]])
+            mark_display((scene.get("objects") or {}).get("instances"), (scene.get("property_graph") or {}).get("spaces"))
     except Exception as error:
         scene.pop("floorplan", None)
         scene.setdefault("quality", {}).setdefault("notes", []).append(f"도면 모델 실패: {str(error)[:120]}")
@@ -410,6 +414,9 @@ def inspect_scene(scene_dir: Path) -> dict:
             [o for o,k in zip(aligned.observations,keep) if k], planes=scene["layout"]["planes"],
             rotations=aligned.R_cw,intrinsics=aligned.intrinsics)
         instances=(scene.get("objects") or {}).get("instances") or []
+        if instances and scene["objects"].get("detections"):  # 저장된 사진별 검출 상자로 가구 상자를 다시 맞춘다
+            scene["objects"]["boxes"]=_fit_object_boxes(instances,scene["objects"]["detections"],aligned.names,aligned.centers,
+                                                        aligned.R_cw,aligned.intrinsics,aligned.xyz,log=lambda *_: None)
         if instances:  # 재계산한 공간에 기존 사물 검출 결과를 다시 붙인다(사진 재검출 없음)
             from .objects import usage_hints
             hints=usage_hints(scene["property_graph"]["spaces"],instances)
@@ -552,6 +559,7 @@ def _detect_objects(frames_dir, aligned, keep, scene, log=print):
                                                aligned.xyz[keep], [o for o, k in zip(aligned.observations, keep) if k], log=log)
     except (OSError, ValueError, cv2_error()) as error:
         return {"status": "model_unavailable", "message": "사물 검출 모델을 확인할 수 없어 사물 인식을 건너뛰었어요.", "error": str(error)}
+    boxes = _fit_object_boxes(instances, per_photo, aligned.names, aligned.centers, aligned.R_cw, aligned.intrinsics, aligned.xyz, log)
     graph = scene.get("property_graph", {})
     hints = usage_hints(graph.get("spaces", []), instances) if graph.get("spaces") else {}
     for space in graph.get("spaces", []):
@@ -560,8 +568,20 @@ def _detect_objects(frames_dir, aligned, keep, scene, log=print):
     return {"status": "detected", "model": "yolox-s-coco (Apache-2.0)", "instances": instances,
             "photos_with_detections": sum(1 for v in per_photo.values() if v),
             "detections": {k: [{"label": d["label"], "score": d["score"], "box": d["box"]} for d in v] for k, v in per_photo.items() if v},
-            "seconds": round(time.time() - started, 1), "min_views": 2,
+            "seconds": round(time.time() - started, 1), "min_views": 2, "boxes": boxes,
             "message": "여러 사진에서 같은 위치로 확인된 사물만 기록했어요. 공간 용도는 사물 근거의 후보이며 확정이 아니에요."}
+
+
+def _fit_object_boxes(instances, detections, names, centers, rotations, intrinsics, points, log=print):
+    """가구 크기·방향 상자(object_boxes). 실패해도 사물 위치 결과는 유지한다."""
+    from .object_boxes import cameras_from_arrays, class_labels, fit_boxes
+    try:
+        fitted, reliable = fit_boxes(instances, detections, cameras_from_arrays(names, centers, rotations, intrinsics),
+                                     class_labels(), points=points)
+    except Exception as error:  # noqa: BLE001 - 보조 기능
+        return {"status": "failed", "error": str(error)[:200]}
+    log(f"  가구 상자: {fitted}개 맞춤, 믿을 만한 상자 {reliable}개")
+    return {"status": "fitted", "fitted": fitted, "reliable": reliable, "method": "multi_view_box_fit"}
 
 
 def cv2_error():

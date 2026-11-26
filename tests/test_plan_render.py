@@ -13,8 +13,12 @@ def scene(usage=None):
     return {"name": "시험 집", "scale": {"method": "camera_height"},
             "property_graph": {"spaces": [a, b], "portals": [
                 {"id": "o1", "spaces": ["space-1", "space-2"], "center_xz": [4.1, 1.5], "width_m": .9, "status": "image_supported"}]},
-            "objects": {"instances": [{"class": "bed", "label": "침대", "position": [5.6, .5, 1.5], "view_count": 5, "max_score": .9},
-                                      {"class": "sink", "label": "세면대", "position": [2, .8, 1], "view_count": 6, "max_score": .9}]}}
+            "objects": {"instances": [
+                {"class": "bed", "label": "침대", "position": [5.6, .5, 1.5], "view_count": 5, "max_score": .9,
+                 "box3d": {"reliable": True, "display": True, "center": [5.6, .25, 1.5], "size": [1.5, .5, 2.0], "front_xz": [-1, 0]}},
+                {"class": "couch", "label": "소파", "position": [2, .4, 1], "view_count": 6, "max_score": .9,
+                 "box3d": {"reliable": False, "display": False, "center": [2, .4, 1], "size": [1.9, .8, .9], "front_xz": [0, 1]}},
+                {"class": "chair", "label": "의자", "position": [1, .4, 2], "view_count": 6, "max_score": .9}]}}
 
 
 class PlanRenderTests(unittest.TestCase):
@@ -25,8 +29,9 @@ class PlanRenderTests(unittest.TestCase):
         areas = sorted(r["area_m2"] for r in plan["rooms"])
         self.assertAlmostEqual(areas[0], 2.8*3, delta=1.2)
         self.assertTrue(plan["walls"] and all(len(w) == 4 for w in plan["walls"]))  # 벽은 사각형 목록
-        # 주방·욕실 후보가 없는 공간의 세면대 아이콘은 그리지 않는다
+        # 크기·방향을 맞추고 표시 판정을 통과한 가구만 그린다(상자 없는 의자, 불합격 소파 제외)
         self.assertEqual([o["class"] for o in plan["objects"]], ["bed"])
+        self.assertAlmostEqual(plan["objects"][0]["angle"], -90., places=3)
 
     def test_svg_png_and_labels(self):
         with tempfile.TemporaryDirectory() as temp:
