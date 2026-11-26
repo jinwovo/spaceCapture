@@ -1,0 +1,38 @@
+import unittest
+
+import numpy as np
+
+from spacecapture.sfm import hybrid_pairs, trajectory_deviation
+
+
+class WalkthroughSfmTests(unittest.TestCase):
+    def test_uneven_spacing_is_not_an_outlier(self):
+        # 프레임이 건너뛰어진 직선 경로: 간격이 고르지 않아도 경로 위에 있으면 0
+        C = np.array([[0, 0, 0], [.1, 0, 0], [.6, 0, 0], [.7, 0, 0], [1.5, 0, 0]], float)
+        self.assertTrue(np.allclose(trajectory_deviation(C), 0))
+
+    def test_off_path_frame_is_flagged(self):
+        C = np.array([[0, 0, 0], [.1, 0, 0], [.2, .9, 0], [.3, 0, 0], [.4, 0, 0]], float)
+        dev = trajectory_deviation(C)
+        self.assertEqual(int(np.argmax(dev)), 2)
+        self.assertGreater(dev[2], .8)
+
+    def test_start_of_orbit_is_not_flagged(self):
+        a = np.linspace(0, 2*np.pi, 40)
+        C = np.stack([.6*np.cos(a), np.zeros_like(a), .6*np.sin(a)], 1)
+        self.assertLess(trajectory_deviation(C).max(), .05)
+
+    def test_hybrid_pairs(self):
+        frames = [f"frame_{i:05d}.jpg" for i in range(400)]
+        photos = [f"photo_{i:05d}.jpg" for i in range(5)]
+        pairs = set(hybrid_pairs(frames + photos))
+        self.assertIn(("frame_00000.jpg", "frame_00001.jpg"), pairs)            # 연속
+        self.assertIn(("frame_00000.jpg", "frame_00396.jpg"), pairs)            # 핵심 프레임 루프 폐합
+        self.assertIn(("photo_00000.jpg", "photo_00004.jpg"), pairs)            # 사진끼리
+        self.assertIn(("frame_00000.jpg", "photo_00002.jpg"), pairs)            # 사진-핵심 프레임
+        self.assertTrue(all(a < b for a, b in pairs))
+        self.assertLess(len(pairs), 15000)  # 연속 약 8,400 + 핵심 프레임 100장 전체 쌍 4,950
+
+
+if __name__ == "__main__":
+    unittest.main()

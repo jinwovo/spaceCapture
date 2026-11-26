@@ -1,0 +1,22 @@
+# Python / Node
+.venv/
+__pycache__/
+*.pyc
+viewer/node_modules/
+viewer/dist/
+
+# 큰 외부 실행 파일·가중치: python tools/fetch-binaries.py 로 받는다
+tools/brush-v0.3.0/
+models/yolox_s.onnx
+
+# 처리 결과·실험 기록·외부 원본 자료(라이선스상 재배포하지 않음)
+scenes/
+artifacts/
+samples/external/
+samples/house*/
+target/
+
+# 도구 임시 파일
+.playwright-mcp/
+*.log
+*.tmp

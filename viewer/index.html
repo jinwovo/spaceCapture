@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>spaceCapture</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <main id="viewport">
+        <div id="topbar">
+          <select id="scene-select" title="장면 선택"></select>
+          <div class="seg" id="modes">
+            <button data-mode="orbit" class="on" title="1">둘러보기</button>
+            <button data-mode="walk" title="2">걷기</button>
+            <button data-mode="top" title="3">평면도</button>
+          </div>
+        </div>
+        <div id="hint"></div>
+        <div id="walk-overlay" hidden>
+          <b>클릭하면 걷기 시작</b>
+          <small>WASD·방향키 이동 · Shift 빠르게 · 마우스로 둘러보기 · ESC 멈춤</small>
+        </div>
+        <div id="loading" hidden>
+          <span id="loading-text">불러오는 중…</span>
+          <div class="bar"><div id="loading-bar"></div></div>
+        </div>
+        <div id="toast" hidden></div>
+      </main>
+
+      <aside id="panel">
+        <section id="intake">
+          <h2>자료 올려 공간 만들기</h2>
+          <p class="muted small">사진과 영상은 이 PC에서 처리해요.</p>
+          <form id="capture-form">
+            <input id="capture-title" aria-label="공간 이름" placeholder="공간 이름 · 예: 강남 사무실" maxlength="80" />
+            <div class="capture-options">
+              <label>자료 종류<select id="capture-kind"><option value="photos">사진 여러 장</option><option value="video">영상 1개</option><option value="mixed">영상 + 보충 사진</option></select></label>
+              <label>공간 종류<select id="capture-space"><option value="unknown">모름 / 자동 검사 필요</option><option value="residential">주택</option><option value="office">사무실</option><option value="meeting_room">회의실</option><option value="outdoor">실외</option></select></label>
+            </div>
+            <input id="capture-files" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff" aria-label="분석할 사진 또는 영상" />
+            <label class="check"><input id="capture-splat" type="checkbox" checked /> 실사 3D도 함께 만들기</label>
+            <button type="submit" class="btn primary" id="capture-submit">분석 시작</button>
+            <p class="muted small" id="capture-status" role="status"></p>
+          </form>
+          <div id="capture-jobs" class="capture-jobs"></div>
+          <div id="capture-result" aria-live="polite"></div>
+        </section>
+        <section id="property-section">
+          <h2>집·공간 연결 후보</h2>
+          <div id="property-summary" class="small muted"></div>
+          <p id="property-active-photo" class="small muted" role="status"></p>
+          <a id="property-plan-download" class="btn plan-download" hidden download>공간 연결 도면 SVG</a>
+          <div id="property-spaces"></div>
+          <div id="property-portals"></div>
+        </section>
+        <section>
+          <h2 id="space-info-title">공간 정보</h2>
+          <div class="dims">
+            <div><span id="dim-w-label">가로</span><b id="dim-w">–</b></div>
+            <div><span id="dim-d-label">세로</span><b id="dim-d">–</b></div>
+            <div><span>높이</span><b id="dim-h">–</b></div>
+          </div>
+          <p class="area" id="dim-area"></p>
+          <p class="scale" id="scale-info"></p>
+          <ul class="notes" id="warnings"></ul>
+          <details class="evidence"><summary>검사 근거와 미확인 항목</summary><div id="assessment-checks"></div></details>
+          <a id="floorplan-download" class="btn plan-download" hidden download>분석 도면 SVG 저장</a>
+        </section>
+
+        <section>
+          <h2>치수 도구</h2>
+          <div class="row">
+            <button class="btn" id="tool-measure">길이 재기</button>
+            <button class="btn" id="tool-calibrate">기준 길이로 보정</button>
+          </div>
+          <div id="calib-box" class="inset" hidden>
+            <label>두 점 사이 실제 길이
+              <span class="unit-input"><input id="calib-input" type="number" min="1" step="0.1" /> cm</span>
+            </label>
+            <div class="row">
+              <button class="btn primary" id="calib-apply">적용</button>
+              <button class="btn" id="calib-cancel">취소</button>
+            </div>
+          </div>
+          <p class="muted small" id="calib-status"></p>
+          <ul class="list" id="measure-list"></ul>
+        </section>
+
+        <section id="furniture-section">
+          <h2>가구 배치</h2>
+          <div class="preset-grid" id="presets"></div>
+          <details class="custom">
+            <summary>직접 입력해서 추가</summary>
+            <div class="form-grid">
+              <input id="c-name" class="wide" placeholder="이름" value="가구" />
+              <label>가로 <span class="unit-input"><input id="c-w" type="number" value="100" min="1" /> cm</span></label>
+              <label>깊이 <span class="unit-input"><input id="c-d" type="number" value="50" min="1" /> cm</span></label>
+              <label>높이 <span class="unit-input"><input id="c-h" type="number" value="80" min="1" /> cm</span></label>
+              <button class="btn primary" id="c-add">추가</button>
+            </div>
+          </details>
+
+          <div id="selected" class="inset" hidden>
+            <div class="form-grid">
+              <input id="s-name" class="wide" />
+              <label>가로 <span class="unit-input"><input id="s-w" type="number" min="1" /> cm</span></label>
+              <label>깊이 <span class="unit-input"><input id="s-d" type="number" min="1" /> cm</span></label>
+              <label>높이 <span class="unit-input"><input id="s-h" type="number" min="1" /> cm</span></label>
+            </div>
+            <div class="row">
+              <button class="btn" id="s-rot-l" title="Q">↺ 15°</button>
+              <button class="btn" id="s-rot-r" title="E">↻ 15°</button>
+              <button class="btn" id="s-rot-90" title="R">↻ 90°</button>
+            </div>
+            <div class="row">
+              <button class="btn" id="s-dup">복제</button>
+              <button class="btn danger" id="s-del" title="Delete">삭제</button>
+            </div>
+            <p class="gaps" id="s-gaps"></p>
+          </div>
+          <ul class="notes" id="conflicts"></ul>
+          <div class="row">
+            <button class="btn" id="layout-save">배치 저장</button>
+            <button class="btn" id="layout-load">불러오기</button>
+            <button class="btn" id="layout-clear">모두 지우기</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>표시</h2>
+          <label class="check"><input type="checkbox" id="show-splat" checked /> 실사 3D</label>
+          <label class="check"><input type="checkbox" id="show-points" /> 점 구름</label>
+          <label class="check"><input type="checkbox" id="show-room" checked /> 방 윤곽·치수</label>
+          <label class="check"><input type="checkbox" id="show-grid" /> 바닥 격자 (10cm)</label>
+          <label class="check"><input type="checkbox" id="cut-ceiling" checked /> 천장 숨기기</label>
+          <label class="check"><input type="checkbox" id="show-cams" /> 촬영 위치</label>
+          <label class="check"><input type="checkbox" id="show-property" checked /> 공간·문 연결 후보</label>
+        </section>
+
+        <section class="help">
+          <h2>사용법</h2>
+          <p><b>둘러보기</b> 드래그 회전 · 휠 확대 · 우클릭 이동</p>
+          <p><b>걷기</b> 클릭 후 WASD로 방 안을 걸어다니기</p>
+          <p><b>평면도</b> 위에서 본 배치 · 드래그로 이동</p>
+          <p><b>가구</b> 끌어서 옮기기 · Q/E 15° 회전 · R 90° · Delete 삭제. 벽에서 4cm 안쪽이면 벽에 붙어요.</p>
+        </section>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

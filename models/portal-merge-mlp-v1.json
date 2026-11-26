@@ -1,0 +1,28 @@
+{
+  "id": "portal-merge-mlp-v1",
+  "features": [
+    "width_m",
+    "clearance_width_m",
+    "log_landmarks",
+    "image_supported",
+    "log_area_min",
+    "log_area_max",
+    "width_to_room_min",
+    "width_to_room_max",
+    "openings_same_pair",
+    "log_photos_min"
+  ],
+  "architecture": [
+    10,
+    16,
+    8,
+    1
+  ],
+  "sha256": "65648bf7085a68ffc20bbfdaedef903229ce5586b2b49d052c1d0a7206281d29",
+  "threshold": 0.93,
+  "fingerprint": "736aeec7f7cf26c6ca53fdc5bfdf91b733a3a963c22cf59dc3a08792ffe13fe1",
+  "enabled_by_default": true,
+  "training": "LH 실제 평면도·ProcTHOR 구조의 모의 관측 + 실제 렌더·SfM 복원",
+  "real_photo_training": false,
+  "activation": "artifacts\\merge-learning\\runs\\20261111-152141-threshold\\activation-check.json"
+}

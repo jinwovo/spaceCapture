@@ -1,0 +1,41 @@
+{
+  "checked_on": "2026-11-09",
+  "external_cases_evaluated": 0,
+  "sources": [
+    {
+      "id": "lh-hanaro",
+      "name": "LH 하나로 내집",
+      "url": "https://hanaro.lh.or.kr/",
+      "official_announcement": "https://www.lh.or.kr/gallery.es?act=view&bid=0003&list_no=11969&mid=a10502000000",
+      "specific_candidate": "https://hanaro.lh.or.kr/siteDetail/view?menuKey=60O0Um5kwF&siteDetailId=73",
+      "candidate_name": "서울공릉 공공분양·신혼희망타운 59/74㎡",
+      "verified": "LH 공식 홈페이지와 견본주택 단지 페이지를 확인했습니다. 단지 페이지에서 개별 분양 사이트로 연결합니다.",
+      "pair_status": "candidate_only",
+      "rights_status": "상업 학습을 허용하는 개별 사진·도면의 이용 조건은 확인하지 못했습니다.",
+      "training_export_allowed": false,
+      "downloaded": false
+    },
+    {
+      "id": "jpdc-public-rental-plans",
+      "name": "제주특별자치도개발공사 건설형 공공임대주택별 평면도 및 조감도",
+      "url": "https://www.jpdc.co.kr/open/open/open.htm",
+      "data_url": "https://www.data.go.kr/data/15089013/fileData.do",
+      "verified": "제공기관의 주거복지 정보 7번 항목과 공공데이터포털 연결을 확인했습니다. 포털 원문은 조사 도구에서 읽지 못했습니다.",
+      "pair_status": "plans_only_no_matched_interior_photos",
+      "rights_status": "원문 파일과 해당 파일의 이용 조건 재확인이 필요합니다. 제3자 검색 목록의 제한 없음 표기를 학습 권한 확인으로 대신하지 않았습니다.",
+      "training_export_allowed": false,
+      "downloaded": false
+    },
+    {
+      "id": "myhome-wonju-munmak1",
+      "name": "마이홈 원주문막1 주택형별 평면도",
+      "url": "https://www.myhome.go.kr/hws/com/fms/cvplFileDownload.do?atchFileId=17031a9c0c822&fileSn=1",
+      "verified": "공식 첨부 문서에 46㎡ A/B형과 51㎡형 평면도 및 치수 표기가 있습니다.",
+      "pair_status": "plans_only_no_matched_interior_photos",
+      "rights_status": "개별 첨부 도면의 상업 학습 허용 여부를 확인하지 못했습니다.",
+      "training_export_allowed": false,
+      "downloaded": false
+    }
+  ],
+  "note": "공식 사이트의 존재와 자료 종류를 조사한 목록입니다. 외부 사진·도면을 확보했거나 실제 매물 정답 비교를 완료했다는 기록이 아닙니다."
+}

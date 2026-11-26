@@ -1,0 +1,12 @@
+{
+  "id": "yolox-s-coco",
+  "sha256": "c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063",
+  "bytes": 35858002,
+  "license": "Apache-2.0",
+  "license_file": "models/LICENSE.yolox",
+  "source": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.onnx",
+  "training_data": "COCO 2017 train (주석 CC BY 4.0, 이미지 Flickr 개별 라이선스). 이 프로젝트에서 재학습하지 않음",
+  "input": "BGR 0~255, 640x640 letterbox(114), 정규화 없음",
+  "runtime": "OpenCV DNN CPU",
+  "note": "공개 사전학습 가중치. 실내 사물 근거로 공간 용도 후보를 만들 뿐 확정하지 않음."
+}

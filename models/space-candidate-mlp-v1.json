@@ -1,0 +1,32 @@
+{
+  "id": "space-candidate-mlp-v1",
+  "feature_version": 1,
+  "features": [
+    "width_m",
+    "log_area",
+    "cameras_inside",
+    "cameras_near",
+    "standalone",
+    "log_component_ratio",
+    "distance_to_core_m",
+    "clearance_m",
+    "enclosure",
+    "camera_fraction",
+    "elongation",
+    "rule_accept"
+  ],
+  "architecture": [
+    12,
+    24,
+    12,
+    1
+  ],
+  "sha256": "cee7f7921cf4645c24fc9982b3b9e59b15e8887ec470749c6919a89c7a53146e",
+  "threshold": 0.4,
+  "fingerprint": "d05089a682cf7a62d9cb721e0def3725a0ba935f42ff6066ec0aaee90bde84ac",
+  "enabled_by_default": true,
+  "training": "LH 실제 평면도(공공데이터포털, 이용허락범위 제한 없음)·ProcTHOR(Apache-2.0) 구조의 모의 관측",
+  "real_photo_training": false,
+  "license_note": "가중치는 이 프로젝트에서 처음부터 학습. LH 자료는 저작권 확보 표시 N(상업 학습 전 제공기관 확인 필요).",
+  "activation": "artifacts\\space-learning\\runs\\20261111-150735-threshold\\activation-check.json"
+}

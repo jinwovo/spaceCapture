@@ -1,0 +1,42 @@
+{
+  "id": "room-type-mlp-v1",
+  "feature_version": 3,
+  "features": [
+    "log_area",
+    "area_fraction",
+    "area_rank",
+    "is_largest",
+    "aspect",
+    "inner_width_m",
+    "portal_count",
+    "max_portal_width",
+    "min_portal_width",
+    "neighbor_count",
+    "touches_largest",
+    "center_offset",
+    "exterior_fraction",
+    "neighbor_max_log_area",
+    "neighbor_min_log_area",
+    "only_small_neighbors"
+  ],
+  "classes": [
+    "living",
+    "bedroom",
+    "bathroom",
+    "other"
+  ],
+  "architecture": [
+    16,
+    32,
+    16,
+    4
+  ],
+  "sha256": "ab4bbeb4667731dc4c52cd4f10c5832fceb1c759f13a3e70b30c257083552e10",
+  "threshold": 0.71,
+  "fingerprint": "f3de74cd2a27db798305632ed844c82e2c6f2dee5f895b53fcb1c6cb7d9a1414",
+  "enabled_by_default": true,
+  "training": "LH 평면도 구조 자체 렌더 사진의 실제 SfM 공간 후보 + 평면도 실 이름 OCR 정답",
+  "real_photo_training": false,
+  "license_note": "가중치는 이 프로젝트에서 처음부터 학습. LH 자료는 저작권 확보 표시 N(상업 학습 전 제공기관 확인 필요).",
+  "activation": "artifacts\\room-type-learning\\runs\\20261111-163810\\activation-check.json"
+}

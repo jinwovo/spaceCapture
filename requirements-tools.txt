@@ -1,0 +1,4 @@
+# 학습 정답 준비 도구 전용(추론 파이프라인은 사용하지 않음). tools/label-lh-rooms.py
+rapidocr==3.10.0      # Apache-2.0, PP-OCRv5 한국어 인식 모델(Apache-2.0)을 내려받아 사용
+onnxruntime==1.31.1   # MIT
+# 주의: rapidocr가 opencv-python-headless 5.0.0.93을 함께 설치한다. requirements.txt의 opencv-python과 같은 버전이어야 한다.

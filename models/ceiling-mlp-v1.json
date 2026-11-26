@@ -1,0 +1,47 @@
+{
+  "id": "ceiling-mlp-v1",
+  "license": "Apache-2.0",
+  "feature_version": 1,
+  "features": [
+    "log_support",
+    "layer_fraction",
+    "extent_x",
+    "extent_z",
+    "area_fraction",
+    "height_std",
+    "plane_residual",
+    "normal_y_mean_12",
+    "normal_y_p25_12",
+    "horizontal_fraction_12",
+    "planarity_12",
+    "normal_y_mean_24",
+    "normal_y_p25_24",
+    "horizontal_fraction_24",
+    "planarity_24",
+    "neighbor_radius",
+    "vertical_spread",
+    "points_above_fraction",
+    "peak_concentration",
+    "height_above_camera",
+    "interior_fraction"
+  ],
+  "sha256": "87f1682e97ea2901d08fa77fd9fc1e1879a7ed6c160f9bf62c09cb4c27157302",
+  "threshold": 0.6787351955307263,
+  "enabled_by_default": true,
+  "neural_training_performed": true,
+  "real_photo_validated": false,
+  "training_report": "artifacts/ceiling-learning/result.json",
+  "source_commits": [
+    "439193522244720b86d8c81cde2e51e3a4d150cf"
+  ],
+  "note": "천장 후보의 기하 특징 신경망. 합성 점군 학습이며 사진 의미 분류·집 전체 생성 모델이 아닙니다.",
+  "inference_fingerprint": "724f9b2bd053eba9a0cfea1edc2e58fd6e8a77e4292719981c0fa16eb71ed946",
+  "migration_note": "2026-11-09 학습 결과를 실행 폴더 구조로 옮김. 가중치·임계값은 변경하지 않음.",
+  "deployment_scope": "experimental_ceiling_candidate_filter",
+  "activation_note": "합성 점군 시험과 사진 복원 회귀를 통과한 관측 높이 후보 판별. 실사 일반화는 미검증.",
+  "activation": {
+    "inference_fingerprint": "724f9b2bd053eba9a0cfea1edc2e58fd6e8a77e4292719981c0fa16eb71ed946",
+    "activated_at": "2026-11-10T09:03:23+09:00",
+    "record": "artifacts/ceiling-learning/activation.json"
+  }
+}
