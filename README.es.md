@@ -24,16 +24,22 @@ Igual que un coche construye una imagen 3D de su entorno con sus cámaras, space
 - **Tipo de estancia**: estima salón, dormitorio o baño a partir de la forma y las conexiones, con una pequeña red neuronal entrenada en este proyecto. Si YOLOX detecta objetos (inodoro, cama, sofá, electrodomésticos de cocina), da prioridad a esa evidencia.
 - **3D fotorrealista**: Gaussian Splatting con Brush, que funciona en GPU AMD e Intel mediante WebGPU.
 - **Plano 2D al estilo inmobiliario coreano** (`plan.png` / `plan.svg`): paredes negras, suelos de madera y baldosa, apertura de puertas, cotas en mm, ㎡ y pyeong (평).
+- **3D más limpio**: detección de características de bajo contraste para paredes blancas lisas en vídeo y eliminación automática de splats flotantes fuera de la vivienda.
+- **Modelo estructural**: una "casa de muñecas" limpia con paredes y huecos de puerta reconstruidos a partir de los espacios detectados, con nombres y superficies.
 - **Visor web**: modos órbita, paseo y planta, medición entre dos puntos, calibración de escala y 16 muebles predefinidos con ajuste a pared y detección de colisiones.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="Plano 2D generado"><br><sub>Plano 2D generado (espacios, puertas, superficies y nombres de estancia estimados)</sub></td>
-<td width="50%"><img src="docs/images/splat-room.jpg" alt="Habitación con Gaussian splatting y medidas"><br><sub>Habitación con Gaussian splatting, medidas y herramientas de muebles</sub></td>
+<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="2D plan"><br><sub>Plano 2D generado (espacios, puertas, superficies y nombres de estancia estimados)</sub></td>
+<td width="50%"><img src="docs/images/structure-model.jpg" alt="structure model"><br><sub>Modelo estructural: paredes levantadas a partir de los espacios detectados, huecos de puerta y suelos coloreados por tipo de estancia</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/walkthrough-frames.jpg" alt="Fotogramas de un vídeo sintético recorriendo la vivienda"><br><sub>Fotogramas de un vídeo sintético con papel pintado blanco y suelo de madera (entrada de prueba)</sub></td>
-<td><img src="docs/images/walkthrough-overlay.jpg" alt="Espacios reconstruidos frente a la verdad de referencia"><br><sub>Reconstrucción del vídeo frente a la referencia: espacios, puertas y recorrido de la cámara</sub></td>
+<td><img src="docs/images/inside-view.jpg" alt="inside view"><br><sub>Vista interior de la vivienda en Gaussian splatting (papel pintado, cuadros, enchufes, suelo de madera)</sub></td>
+<td><img src="docs/images/splat-room.jpg" alt="splat room"><br><sub>Habitación con Gaussian splatting, medidas y herramientas de muebles</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/walkthrough-frames.jpg" alt="walk-through frames"><br><sub>Fotogramas de un vídeo sintético con papel pintado blanco y suelo de madera (entrada de prueba)</sub></td>
+<td><img src="docs/images/walkthrough-overlay.jpg" alt="reconstruction vs ground truth"><br><sub>Reconstrucción del vídeo frente a la referencia: espacios, puertas y recorrido de la cámara</sub></td>
 </tr>
 </table>
 
@@ -61,7 +67,7 @@ flowchart LR
 |---|---|
 | Vídeo de una habitación con marcador (4,2 × 3,6 m) | error de ancho/fondo **+2,8 / +3,1 cm**, RMSE de trayectoria ≈ 0,2 cm |
 | Vídeo recorriendo toda la vivienda (162 s, 5 estancias) | **465 / 469** fotogramas registrados, error de cámara 0,39 cm |
-| Misma vivienda, materiales realistas (papel pintado blanco liso, suelo de madera) | 5 / 5 espacios, las 4 puertas encontradas, IoU 0,687. Los fotogramas de pared lisa son más difíciles: se conservan 328 de 477 tras los controles de pose |
+| Misma vivienda, materiales realistas (papel pintado blanco liso, suelo de madera) | **473 / 477** fotogramas registrados, error de cámara **0,16 cm**, 5 / 5 estancias emparejadas, IoU 0,713 |
 | Vídeo (3 estancias) + 42 fotos (las otras 2) | **319 / 323** registradas, las 42 fotos en el mismo sistema de coordenadas, error de cámara **0,16 cm**, IoU de espacios 0,733 |
 | Fotos de 26 viviendas no vistas en el entrenamiento (estructuras de planos LH) | IoU medio de espacios **0,833**, exhaustividad / precisión de puertas **0,85 / 0,87** |
 | Tipo de estancia (salón / dormitorio / baño / otro), 90 espacios | **84 %** de acierto; **92 %** en el 73 % de espacios que etiqueta |

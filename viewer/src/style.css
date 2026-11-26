@@ -145,6 +145,7 @@ button:disabled { opacity: .5; cursor: default; }
   font-variant-numeric: tabular-nums;
 }
 .label.dim { font-weight: 600; }
+.label.room-name { font-size: 13px; font-weight: 700; padding: 4px 9px; background: rgba(255,255,255,.94); border-color: #c9cfd6; }
 .label.guide { color: #1d4ed8; border-color: #9db6f5; }
 .label.bad { color: var(--danger); border-color: var(--danger); }
 .label.item { font-size: 11px; opacity: 0.92; }

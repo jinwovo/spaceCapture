@@ -15,7 +15,7 @@ import { fmtLen } from "./labels.js";
 import { MeasureTool } from "./measure.js";
 import { Room } from "./room.js";
 import { initIntake, renderAssessment } from "./intake.js";
-import { renderProperty, propertyOverlay } from "./property.js";
+import { renderProperty, propertyOverlay, structureModel } from "./property.js";
 import * as store from "./storage.js";
 import { EYE_HEIGHT, Walker } from "./walk.js";
 
@@ -81,6 +81,7 @@ let camMarkers = null;
 let observedWalls = null;
 let sceneLoadVersion = 0;
 let houseOverlay = null;
+let structure = null;
 const pointsClip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 100);
 
 const bounds = () => room.bounds(current.k);
@@ -168,8 +169,9 @@ async function loadScene(name) {
   $("show-splat").disabled = true;
   measure.cancel();
   measure.clearAll();
-  for (const o of [splat, points, camMarkers, observedWalls, houseOverlay]) disposeObject(o);
+  for (const o of [splat, points, camMarkers, observedWalls, houseOverlay, structure]) disposeObject(o);
   houseOverlay = null;
+  structure = null;
   observedWalls = null;
   splat = points = camMarkers = ceilingCut = null;
 
@@ -187,6 +189,10 @@ async function loadScene(name) {
   if (data.property_graph) {
     houseOverlay=propertyOverlay(THREE,data.property_graph);
     world.add(houseOverlay);
+    if (data.property_graph.spaces?.length) {
+      structure=structureModel(THREE,data.property_graph,data.room?.height??2.4);
+      world.add(structure);
+    }
   }
   renderProperty(data,name,(photo)=>{
     const camera=data.cameras.find(c=>c.name===photo); if (!camera) return;
@@ -293,6 +299,7 @@ function applyDisplay() {
   room.grid.visible = boxSupported && ($("show-grid").checked || mode === "top");
   if (observedWalls) observedWalls.visible = $("show-room").checked;
   if (houseOverlay) houseOverlay.visible = $("show-property").checked;
+  if (structure) structure.visible = $("show-structure").checked;
   if (camMarkers) camMarkers.visible = $("show-cams").checked;
   const cut = $("cut-ceiling").checked && mode !== "walk";
   if (ceilingCut) ceilingCut.visible = cut;
@@ -596,9 +603,19 @@ window.addEventListener("keydown", (e) => {
 
 // ------------------------------------------------------------------ panel wiring
 for (const btn of $("modes").querySelectorAll("button")) btn.onclick = () => setMode(btn.dataset.mode);
-for (const id of ["show-splat", "show-points", "show-room", "show-grid", "cut-ceiling", "show-cams", "show-property"]) {
+for (const id of ["show-splat", "show-points", "show-room", "show-grid", "cut-ceiling", "show-cams", "show-property", "show-structure"]) {
   $(id).onchange = applyDisplay;
 }
+// 구조 모형을 켜면 집 전체를 비스듬히 내려다보는 시점(모형 집 보기)으로 옮긴다.
+$("show-structure").addEventListener("change", () => {
+  if (!$("show-structure").checked || !structure) return;
+  const box = new THREE.Box3().setFromObject(structure), c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  const r = Math.max(size.x, size.z);
+  setMode("orbit");
+  cam.position.set(c.x + 0.3 * r, 1.15 * r, c.z + 0.85 * r);
+  orbit.target.set(c.x, 0, c.z);
+  orbit.update();
+});
 $("tool-measure").onclick = () => (measure.kind === "measure" ? measure.cancel() : (setMode(mode === "walk" ? "orbit" : mode), measure.start("measure")));
 $("tool-calibrate").onclick = () => {
   if (measure.kind === "calibrate") return measure.cancel();

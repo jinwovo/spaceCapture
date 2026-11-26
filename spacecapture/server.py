@@ -173,7 +173,7 @@ class JobStore:
         if job["kind"] != "photos":
             extra += ["--max-frames", "400"]  # 집 전체 걷기 영상(2~3분)도 프레임 간격이 너무 벌어지지 않게
         cmd = [sys.executable, "-u", "-m", "spacecapture", "photos" if job["kind"] == "photos" else "process",
-               str(source), "--name", job["scene"], "--steps", "3000", "--max-resolution", "640", "--max-splats", "150000"] + extra
+               str(source), "--name", job["scene"], "--steps", "10000", "--max-resolution", "960", "--max-splats", "300000"] + extra
         if not job["splat"]:
             cmd.append("--no-splat")
         env = dict(os.environ, PYTHONIOENCODING="utf-8", OPENBLAS_NUM_THREADS="1")

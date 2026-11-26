@@ -24,16 +24,22 @@ Like a car that builds a 3D picture of its surroundings from its cameras, spaceC
 - **Room types**: estimates living room / bedroom / bathroom from shape and connectivity (a small neural network trained here), and prefers object evidence (toilet, bed, sofa, kitchen appliances detected with YOLOX) when available.
 - **Photorealistic 3D** with Gaussian splatting (Brush, runs on AMD/Intel GPUs via WebGPU).
 - **Korean real-estate style 2D plan** (`plan.png` / `plan.svg`): black walls, wood/tile floors, door swings, mm dimension chains, ㎡ and 평.
+- **Cleaner 3D**: low-contrast feature detection for plain white walls in videos, and automatic removal of floating splats outside the home.
+- **Structure model**: a clean "dollhouse" of walls and door openings rebuilt from the detected spaces, with room names and areas.
 - **Web viewer**: orbit / walk / plan modes, two-point measurement, scale calibration, 16 furniture presets with wall snapping and collision checks.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="Generated 2D floor plan"><br><sub>Generated 2D plan (spaces, doors, areas, estimated room names)</sub></td>
-<td width="50%"><img src="docs/images/splat-room.jpg" alt="Gaussian splat room with measurements"><br><sub>Gaussian-splat room with measured dimensions and furniture tools</sub></td>
+<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="2D plan"><br><sub>Generated 2D plan (spaces, doors, areas, estimated room names)</sub></td>
+<td width="50%"><img src="docs/images/structure-model.jpg" alt="structure model"><br><sub>Structure model: walls rebuilt from the detected spaces, door gaps, floors colored by room type</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/walkthrough-frames.jpg" alt="Frames of a synthetic walk-through video"><br><sub>Frames from a synthetic walk-through video: white wallpaper, wood floor (test input)</sub></td>
-<td><img src="docs/images/walkthrough-overlay.jpg" alt="Reconstructed spaces vs ground truth"><br><sub>Walk-through reconstruction vs ground truth: spaces, doors, camera path</sub></td>
+<td><img src="docs/images/inside-view.jpg" alt="inside view"><br><sub>Inside view of the Gaussian-splat home (wallpaper, frames, outlets, wood floor)</sub></td>
+<td><img src="docs/images/splat-room.jpg" alt="splat room"><br><sub>Gaussian-splat room with measured dimensions and furniture tools</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/walkthrough-frames.jpg" alt="walk-through frames"><br><sub>Frames from a synthetic walk-through video: white wallpaper, wood floor (test input)</sub></td>
+<td><img src="docs/images/walkthrough-overlay.jpg" alt="reconstruction vs ground truth"><br><sub>Walk-through reconstruction vs ground truth: spaces, doors, camera path</sub></td>
 </tr>
 </table>
 
@@ -61,7 +67,7 @@ flowchart LR
 |---|---|
 | Single room video with marker (4.2 × 3.6 m) | width/depth error **+2.8 / +3.1 cm**, camera trajectory RMSE ≈ 0.2 cm |
 | Whole-home walk-through video (162 s, 5 rooms) | **465 / 469** frames registered, camera error 0.39 cm |
-| Same home, realistic materials (plain white wallpaper, wood floor) | 5 / 5 spaces, all 4 doors found, room IoU 0.687. Plain-wall frames are harder: 328 of 477 frames kept after pose checks |
+| Same home, realistic materials (plain white wallpaper, wood floor) | **473 / 477** frames registered, camera error **0.16 cm**, 5 / 5 rooms matched, room IoU 0.713 |
 | Video (3 rooms) + 42 photos (other 2 rooms) | **319 / 323** registered, all 42 photos in the same frame, camera error **0.16 cm**, room IoU 0.733 |
 | Photo sets of 26 unseen houses (LH floor-plan structures) | mean room IoU **0.833**, door recall / precision **0.85 / 0.87** |
 | Room type (living / bedroom / bathroom / other), 90 spaces | **84 %** accuracy; **92 %** on the 73 % of spaces it labels |

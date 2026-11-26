@@ -24,16 +24,22 @@
 - **部屋の用途**：形と接続関係からリビング・寝室・浴室を推定します（このプロジェクトで学習した小さなニューラルネット）。YOLOX でトイレ・ベッド・ソファ・キッチン家電などを検出できた場合は、その根拠を優先します。
 - **フォトリアルな 3D**：Brush によるガウシアンスプラッティング。WebGPU 経由で AMD/Intel GPU でも動作します。
 - **韓国の不動産サイト風 2D 間取り図**（`plan.png` / `plan.svg`）：黒い壁、木目・タイルの床、ドアの開閉、mm 寸法線、㎡ と坪（평）を描きます。
+- **よりきれいな 3D**：動画では模様の少ない白い壁でも特徴点を拾う低コントラスト検出を使い、家の外に浮いたスプラットを自動で除去します。
+- **構造モデル**：復元した空間から壁とドア開口を立て直したすっきりした模型。部屋名と面積も表示します。
 - **Web ビューア**：周回・ウォーク・平面図モード、2 点計測、基準長さによる補正、家具プリセット 16 種（壁へのスナップ・干渉チェック）に対応します。
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="生成された 2D 間取り図"><br><sub>生成された 2D 間取り図（空間・ドア・面積・推定した部屋名）</sub></td>
-<td width="50%"><img src="docs/images/splat-room.jpg" alt="ガウシアンスプラットの部屋と寸法"><br><sub>ガウシアンスプラットの部屋、計測寸法と家具ツール</sub></td>
+<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="2D plan"><br><sub>生成された 2D 間取り図（空間・ドア・面積・推定した部屋名）</sub></td>
+<td width="50%"><img src="docs/images/structure-model.jpg" alt="structure model"><br><sub>構造モデル：復元した空間から壁を立ててドア部分を開け、床は用途別に色分け</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/walkthrough-frames.jpg" alt="合成ウォークスルー動画のフレーム"><br><sub>白い壁紙・木の床の合成歩き撮り動画のフレーム（テスト入力）</sub></td>
-<td><img src="docs/images/walkthrough-overlay.jpg" alt="復元空間と正解の比較"><br><sub>歩き撮り動画の復元結果と正解の比較：空間・ドア・カメラ経路</sub></td>
+<td><img src="docs/images/inside-view.jpg" alt="inside view"><br><sub>ガウシアンスプラットで復元した家の室内視点（壁紙・額縁・コンセント・木の床）</sub></td>
+<td><img src="docs/images/splat-room.jpg" alt="splat room"><br><sub>ガウシアンスプラットの部屋、計測寸法と家具ツール</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/walkthrough-frames.jpg" alt="walk-through frames"><br><sub>白い壁紙・木の床の合成歩き撮り動画のフレーム（テスト入力）</sub></td>
+<td><img src="docs/images/walkthrough-overlay.jpg" alt="reconstruction vs ground truth"><br><sub>歩き撮り動画の復元結果と正解の比較：空間・ドア・カメラ経路</sub></td>
 </tr>
 </table>
 
@@ -61,7 +67,7 @@ flowchart LR
 |---|---|
 | マーカーありの単一部屋動画（4.2 × 3.6 m） | 幅・奥行き誤差 **+2.8 / +3.1 cm**、カメラ軌跡 RMSE 約 0.2 cm |
 | 家全体の歩き撮り動画（162 秒、5 部屋） | **465 / 469** フレームを登録、カメラ誤差 0.39 cm |
-| 同じ家、実際に近い素材（模様の少ない白い壁紙・木の床） | 空間 5 / 5、ドア 4 つすべて検出、空間 IoU 0.687。壁だけのフレームは難しく、姿勢チェック後 477 枚中 328 枚を使用 |
+| 同じ家、実際に近い素材（模様の少ない白い壁紙・木の床） | **473 / 477** フレームを登録、カメラ誤差 **0.16 cm**、部屋 5 / 5 対応、空間 IoU 0.713 |
 | 動画（3 部屋）+ 写真 42 枚（残り 2 部屋） | **319 / 323** 枚を登録、写真 42 枚すべて同じ座標系、カメラ誤差 **0.16 cm**、空間 IoU 0.733 |
 | 学習に使っていない 26 戸の写真セット（LH 間取り図の構造） | 平均空間 IoU **0.833**、ドアの再現率 / 適合率 **0.85 / 0.87** |
 | 部屋の用途（リビング / 寝室 / 浴室 / その他）、90 空間 | 正解率 **84%**、名前を付けた 73% の空間では **92%** |

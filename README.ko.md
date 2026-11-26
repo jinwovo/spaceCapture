@@ -24,16 +24,22 @@
 - **공간 용도**: 크기·모양·연결로 거실·침실·욕실을 추정합니다(직접 학습한 작은 신경망). YOLOX로 검출한 변기·침대·소파·주방 가전 같은 사물 근거가 있으면 그것을 우선합니다.
 - **실사 3D**: Brush로 가우시안 스플래팅을 학습합니다. WebGPU로 AMD/Intel GPU에서도 동작합니다.
 - **국내 매물 양식 2D 평면도**(`plan.png` / `plan.svg`): 검은 벽, 나무·타일 바닥, 문 열림 표시, mm 치수 사슬, ㎡와 평을 그립니다.
+- **더 깨끗한 3D**: 영상의 무늬 없는 흰 벽에서도 특징점을 잡는 저대비 검출, 집 밖에 떠 있는 스플랫 자동 정리.
+- **구조 모형**: 복원된 공간으로 벽과 문 자리를 다시 세운 깔끔한 모형 집. 방 이름과 면적을 함께 표시합니다.
 - **웹 뷰어**: 둘러보기·걷기·평면도 모드, 두 점 측정, 기준 길이 보정, 가구 16종 배치(벽 스냅·겹침 검사)를 지원합니다.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="생성된 2D 평면도"><br><sub>생성된 2D 평면도 (공간·문·면적·추정 실 이름)</sub></td>
-<td width="50%"><img src="docs/images/splat-room.jpg" alt="가우시안 스플랫 방과 치수"><br><sub>가우시안 스플랫으로 만든 방, 측정 치수와 가구 도구</sub></td>
+<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="2D plan"><br><sub>생성된 2D 평면도 (공간·문·면적·추정 실 이름)</sub></td>
+<td width="50%"><img src="docs/images/structure-model.jpg" alt="structure model"><br><sub>구조 모형: 복원된 공간으로 벽을 세우고 문 자리를 비움, 바닥은 용도별 색</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/walkthrough-frames.jpg" alt="합성 걷기 영상 프레임"><br><sub>흰 벽지·나무 마루의 합성 걷기 영상 프레임 (시험 입력)</sub></td>
-<td><img src="docs/images/walkthrough-overlay.jpg" alt="복원 공간과 정답 비교"><br><sub>걷기 영상 복원 결과와 정답 비교: 공간·문·카메라 경로</sub></td>
+<td><img src="docs/images/inside-view.jpg" alt="inside view"><br><sub>가우시안 스플랫으로 만든 집의 실내 시점 (벽지·액자·콘센트·나무 마루)</sub></td>
+<td><img src="docs/images/splat-room.jpg" alt="splat room"><br><sub>가우시안 스플랫으로 만든 방, 측정 치수와 가구 도구</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/walkthrough-frames.jpg" alt="walk-through frames"><br><sub>흰 벽지·나무 마루의 합성 걷기 영상 프레임 (시험 입력)</sub></td>
+<td><img src="docs/images/walkthrough-overlay.jpg" alt="reconstruction vs ground truth"><br><sub>걷기 영상 복원 결과와 정답 비교: 공간·문·카메라 경로</sub></td>
 </tr>
 </table>
 
@@ -61,7 +67,7 @@ flowchart LR
 |---|---|
 | 마커가 있는 방 하나 영상 (4.2 × 3.6m) | 가로·세로 오차 **+2.8 / +3.1cm**, 카메라 궤적 RMSE 약 0.2cm |
 | 집 전체 걷기 영상 (162초, 방 5개) | 프레임 **465 / 469**장 위치 복원, 카메라 오차 0.39cm |
-| 같은 집, 실제 같은 재질 (무늬 적은 흰 벽지·나무 마루) | 공간 5 / 5, 문 4개 모두 찾음, 공간 IoU 0.687. 벽만 보이는 프레임이 어려워 포즈 검사 후 477장 중 328장 사용 |
+| 같은 집, 실제 같은 재질 (무늬 적은 흰 벽지·나무 마루) | 프레임 **473 / 477**장 위치 복원, 카메라 오차 **0.16cm**, 방 5 / 5 대응, 공간 IoU 0.713 |
 | 영상(방 3개) + 사진 42장(나머지 방 2개) | **319 / 323**장 복원, 사진 42장 모두 같은 좌표계, 카메라 오차 **0.16cm**, 공간 IoU 0.733 |
 | 학습에 쓰지 않은 26채의 사진 묶음 (LH 평면도 구조) | 평균 공간 IoU **0.833**, 문 재현율 / 정밀도 **0.85 / 0.87** |
 | 공간 용도 (거실·침실·욕실·기타), 90개 공간 | 정확도 **84%**, 이름을 붙이는 73% 공간에서는 **92%** |

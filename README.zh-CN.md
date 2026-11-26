@@ -24,16 +24,22 @@
 - **房间用途**：根据形状和连通关系估计客厅、卧室和卫生间（使用在本项目中训练的小型神经网络）。如果 YOLOX 检测到马桶、床、沙发或厨房电器等物体，会优先采用这些证据。
 - **照片级 3D**：使用 Brush 进行高斯泼溅（Gaussian Splatting），通过 WebGPU 支持 AMD/Intel 显卡。
 - **韩国房产风格 2D 平面图**（`plan.png` / `plan.svg`）：黑色墙体、木地板/瓷砖、开门弧线、毫米尺寸链，以及 ㎡ 和 坪（평）。
+- **更干净的 3D**：视频中对少纹理白墙使用低对比度特征检测，并自动清除住宅外漂浮的泼溅点。
+- **结构模型**：用检测到的空间重新立起墙体和门洞的简洁“模型屋”，并标注房间名称和面积。
 - **网页查看器**：环绕、漫游和平面图模式，两点测量，尺度校正，16 种家具预设（贴墙吸附、碰撞检查）。
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="生成的 2D 平面图"><br><sub>生成的 2D 平面图（空间、门、面积、估计的房间名称）</sub></td>
-<td width="50%"><img src="docs/images/splat-room.jpg" alt="高斯泼溅房间与尺寸"><br><sub>高斯泼溅房间，带测量尺寸和家具工具</sub></td>
+<td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="2D plan"><br><sub>生成的 2D 平面图（空间、门、面积、估计的房间名称）</sub></td>
+<td width="50%"><img src="docs/images/structure-model.jpg" alt="structure model"><br><sub>结构模型：用重建的空间立起墙体并留出门洞，地面按房间用途着色</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/walkthrough-frames.jpg" alt="合成走动视频帧"><br><sub>白色墙纸、木地板的合成走动视频帧（测试输入）</sub></td>
-<td><img src="docs/images/walkthrough-overlay.jpg" alt="重建空间与真值对比"><br><sub>走动视频重建结果与真值对比：空间、门、相机路径</sub></td>
+<td><img src="docs/images/inside-view.jpg" alt="inside view"><br><sub>高斯泼溅住宅的室内视角（墙纸、画框、插座、木地板）</sub></td>
+<td><img src="docs/images/splat-room.jpg" alt="splat room"><br><sub>高斯泼溅房间，带测量尺寸和家具工具</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/walkthrough-frames.jpg" alt="walk-through frames"><br><sub>白色墙纸、木地板的合成走动视频帧（测试输入）</sub></td>
+<td><img src="docs/images/walkthrough-overlay.jpg" alt="reconstruction vs ground truth"><br><sub>走动视频重建结果与真值对比：空间、门、相机路径</sub></td>
 </tr>
 </table>
 
@@ -61,7 +67,7 @@ flowchart LR
 |---|---|
 | 带标记的单个房间视频（4.2 × 3.6 m） | 长宽误差 **+2.8 / +3.1 cm**，相机轨迹 RMSE 约 0.2 cm |
 | 全屋走动视频（162 秒，5 个房间） | **465 / 469** 帧完成注册，相机误差 0.39 cm |
-| 同一住宅，逼真材质（少纹理白墙纸、木地板） | 空间 5 / 5，4 扇门全部找到，空间 IoU 0.687。纯墙面帧更难：位姿检查后 477 帧中保留 328 帧 |
+| 同一住宅，逼真材质（少纹理白墙纸、木地板） | **473 / 477** 帧完成注册，相机误差 **0.16 cm**，5 / 5 个房间对应，空间 IoU 0.713 |
 | 视频（3 个房间）+ 42 张照片（另外 2 个房间） | **319 / 323** 张完成注册，42 张照片全部在同一坐标系，相机误差 **0.16 cm**，空间 IoU 0.733 |
 | 26 套未参与训练的住宅照片集（LH 平面图结构） | 平均空间 IoU **0.833**，门召回率 / 精确率 **0.85 / 0.87** |
 | 房间用途（客厅 / 卧室 / 卫生间 / 其他），90 个空间 | 准确率 **84%**；对其给出名称的 73% 空间，准确率为 **92%** |

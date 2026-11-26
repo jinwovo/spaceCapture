@@ -222,6 +222,12 @@ def drop_unsupported_photo_poses(rec: pycolmap.Reconstruction, log=print):
 
 
 FRAME_PREFIX = "frame_"
+# SIFT 추가 설정(실험·조정용). 비어 있으면 COLMAP 기본값.
+SIFT_OPTIONS: dict = {}
+# 영상 프레임 전용: 무늬 적은 흰 벽에서도 특징점을 잡도록 저대비 검출(기본 0.0067 → 0.003).
+# 실내 재질 걷기 영상 477장: 등록 378→473장, 공간 IoU 0.687→0.713, 처리 6.7→10.1분.
+# 사진 입력(LH 시험 4채)은 IoU 0.874→0.875로 차이가 없고 시간만 약 2배라 적용하지 않는다(2026-11-26).
+VIDEO_SIFT_OPTIONS: dict = {"peak_threshold": 0.003}
 
 
 def hybrid_pairs(names, frame_prefix=FRAME_PREFIX, overlap=15, keyframes=100):
@@ -280,20 +286,26 @@ def run_sfm(
     extraction = pycolmap.FeatureExtractionOptions()
     extraction.max_image_size = max_image_size
     extraction.sift.max_num_features = max_features
+    for key, value in SIFT_OPTIONS.items():
+        setattr(extraction.sift, key, value)
+    video_extraction = pycolmap.FeatureExtractionOptions(extraction.todict())
+    for key, value in VIDEO_SIFT_OPTIONS.items():
+        if key not in SIFT_OPTIONS:
+            setattr(video_extraction.sift, key, value)
     all_names = sorted(p.name for p in image_dir.glob("*.jpg"))
     frame_names = [n for n in all_names if n.startswith(FRAME_PREFIX)]
     mixed = not unordered and len(frame_names) < len(all_names)  # 영상 프레임 + 사진
     if mixed:
         # 영상 프레임은 한 카메라(같은 초점·왜곡), 사진은 사진마다 카메라(확대·다른 폰 가능)
         pycolmap.extract_features(db, image_dir, image_names=frame_names, camera_mode=pycolmap.CameraMode.SINGLE,
-                                  reader_options=reader, extraction_options=extraction, device=cpu)
+                                  reader_options=reader, extraction_options=video_extraction, device=cpu)
         pycolmap.extract_features(db, image_dir, image_names=[n for n in all_names if n not in set(frame_names)],
                                   camera_mode=pycolmap.CameraMode.PER_IMAGE,
                                   reader_options=reader, extraction_options=extraction, device=cpu)
     else:
         camera_mode = pycolmap.CameraMode.PER_IMAGE if unordered else pycolmap.CameraMode.SINGLE
         pycolmap.extract_features(db, image_dir, camera_mode=camera_mode,
-                                  reader_options=reader, extraction_options=extraction, device=cpu)
+                                  reader_options=reader, extraction_options=extraction if unordered else video_extraction, device=cpu)
     log(f"  특징점 추출 완료 ({time.time() - t:.0f}초)")
 
     t = time.time()

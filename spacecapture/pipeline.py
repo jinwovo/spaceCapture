@@ -424,8 +424,12 @@ def run_splat(scene_dir: Path, steps: int = 15000, log=print,
     ply = splatmod.train(dataset, work / "brush", steps=steps, log=log,
                          max_resolution=max_resolution, max_splats=max_splats)
     out = scene_dir / "splat.ply"
-    shutil.copy2(ply, out)
+    from .splat_clean import clean_splat
+    cleaning = clean_splat(ply, out, load_scene(scene_dir))  # 집 밖·허공 잡티 정리(원본은 work/brush)
+    removed = cleaning["input"] - cleaning["kept"]
+    log(f"  3D 잡티 정리: {cleaning['input']:,}개 중 {removed:,}개 제거 (집 밖·바닥 아래·천장 위·거의 투명·과대)")
     scene = refine_splat_room(scene_dir, log=log)
+    scene["splat_cleaning"] = cleaning
     scene["splat_training"] = json.loads((work / "brush" / "training.json").read_text(encoding="utf-8"))
     scene.setdefault("timing_s", {})["splat"] = round(time.time() - t, 1)
     _write_scene(scene_dir, scene)
