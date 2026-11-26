@@ -68,6 +68,7 @@ flowchart LR
 | Single room video with marker (4.2 × 3.6 m) | width/depth error **+2.8 / +3.1 cm**, camera trajectory RMSE ≈ 0.2 cm |
 | Whole-home walk-through video (162 s, 5 rooms) | **465 / 469** frames registered, camera error 0.39 cm |
 | Same home, realistic materials (plain white wallpaper, wood floor) | **473 / 477** frames registered, camera error **0.16 cm**, 5 / 5 rooms matched, room IoU 0.713 |
+| Same home, phone-like 30 fps video (hand shake, motion blur, auto exposure, noise, lens distortion) | **727 / 807** frames registered, 5 / 5 rooms matched, room IoU 0.664 |
 | Video (3 rooms) + 42 photos (other 2 rooms) | **319 / 323** registered, all 42 photos in the same frame, camera error **0.16 cm**, room IoU 0.733 |
 | Photo sets of 26 unseen houses (LH floor-plan structures) | mean room IoU **0.833**, door recall / precision **0.85 / 0.87** |
 | Room type (living / bedroom / bathroom / other), 90 spaces | **84 %** accuracy; **92 %** on the 73 % of spaces it labels |

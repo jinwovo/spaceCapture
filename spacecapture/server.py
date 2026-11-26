@@ -171,7 +171,7 @@ class JobStore:
             source = source / video["stored"]
             extra = ["--photos", str(photo_dir)]
         if job["kind"] != "photos":
-            extra += ["--max-frames", "400"]  # 집 전체 걷기 영상(2~3분)도 프레임 간격이 너무 벌어지지 않게
+            extra += ["--max-frames", "800"]  # 집 전체 걷기 영상(2~3분, 초당 5장)
         cmd = [sys.executable, "-u", "-m", "spacecapture", "photos" if job["kind"] == "photos" else "process",
                str(source), "--name", job["scene"], "--steps", "10000", "--max-resolution", "960", "--max-splats", "300000"] + extra
         if not job["splat"]:

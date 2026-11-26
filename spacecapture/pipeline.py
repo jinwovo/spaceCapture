@@ -108,6 +108,18 @@ def _warnings(n_frames: int, n_reg: int, align_info: dict, room: dict, photos: b
     return w
 
 
+def _capture_warnings(rec, photos: bool) -> list[str]:
+    """프레임당 3D 점이 적으면 흔들림·흐림·무늬 없는 화면이 많았다는 뜻이다(촬영 안내).
+    합성 걷기 영상: 깨끗함 약 127점/장, 움직임 번짐 26, 폰 효과 전부 27(2026-11-27)."""
+    per_view = rec.num_points3D() / max(1, rec.num_reg_images())
+    if per_view >= 50:
+        return []
+    return ["사진마다 잡힌 3D 특징이 적어요. 흔들려 흐리거나 벽만 가까이 찍힌 장면이 많은 것 같아요. "
+            "천천히 걷고, 벽에서 1m 이상 떨어져 바닥과 벽이 만나는 선이 함께 보이게 찍어 주세요."
+            if not photos else
+            "사진마다 잡힌 3D 특징이 적어요. 흔들림 없이, 서로 겹치는 부분이 넓게 보이도록 찍어 주세요."]
+
+
 def _room_public(room: dict) -> dict:
     keys = ("min", "max", "width", "depth", "height", "height_source", "area_m2", "walls", "ceiling")
     return _r({k: room[k] for k in keys}|{k:room[k] for k in ("height_method","ceiling_analysis") if k in room})
@@ -119,8 +131,8 @@ def process(
     scenes_root: Path = SCENES,
     marker_mm: float | None = 150.0,
     marker_dict: str = "DICT_4X4_50",
-    target_fps: float = 3.0,
-    max_frames: int = 240,
+    target_fps: float = 5.0,
+    max_frames: int = 800,
     camera_height: float = ASSUMED_CAMERA_HEIGHT,
     focal_px: float | None = None,
     splat: bool = True,
@@ -260,7 +272,8 @@ def process(
             "registered": rec.num_reg_images(),
             "points": int(keep.sum()),
             "reprojection_error_px": round(float(np.mean(arrays.error)), 3),
-            "warnings": _warnings(finfo["selected"], rec.num_reg_images(), al.info, room, photos=photos),
+            "warnings": _warnings(finfo["selected"], rec.num_reg_images(), al.info, room, photos=photos) + _capture_warnings(rec, photos),
+            "points_per_view": round(rec.num_points3D() / max(1, rec.num_reg_images()), 1),
         },
         "source": ({"kind": "photos", "folder": video.name, "input_count": finfo["input_count"],
                     "skipped": finfo["skipped"], "photos": finfo["photos"]} if photos else
@@ -374,6 +387,10 @@ def inspect_scene(scene_dir: Path) -> dict:
         room["max"][1]=room["height"]
         q=scene["quality"]
         q["warnings"]=_warnings(q["frames"],q["registered"],scene,room,photos=scene.get("source",{}).get("kind")=="photos")
+        if q.get("points_per_view") is not None and q["points_per_view"] < 50:  # 처리 때 남긴 촬영 안내 유지
+            class _Rec:  # _capture_warnings에 필요한 값만
+                num_points3D=lambda self: q["points_per_view"]; num_reg_images=lambda self: 1
+            q["warnings"]+=_capture_warnings(_Rec(),scene.get("source",{}).get("kind")=="photos")
         if scene.get("source",{}).get("kind")=="photos":
             q["warnings"].append("관측된 공간과 연결의 후보예요. 실제 방 개수·용도는 미확정이에요.")
     scene["layout"] = analyze_layout(points, [c["position"] for c in scene["cameras"]], scene["room"])

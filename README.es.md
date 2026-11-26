@@ -68,6 +68,7 @@ flowchart LR
 | Vídeo de una habitación con marcador (4,2 × 3,6 m) | error de ancho/fondo **+2,8 / +3,1 cm**, RMSE de trayectoria ≈ 0,2 cm |
 | Vídeo recorriendo toda la vivienda (162 s, 5 estancias) | **465 / 469** fotogramas registrados, error de cámara 0,39 cm |
 | Misma vivienda, materiales realistas (papel pintado blanco liso, suelo de madera) | **473 / 477** fotogramas registrados, error de cámara **0,16 cm**, 5 / 5 estancias emparejadas, IoU 0,713 |
+| Misma vivienda, vídeo a 30 fps como de móvil (temblor, desenfoque de movimiento, autoexposición, ruido, distorsión de lente) | **727 / 807** fotogramas registrados, 5 / 5 estancias emparejadas, IoU 0,664 |
 | Vídeo (3 estancias) + 42 fotos (las otras 2) | **319 / 323** registradas, las 42 fotos en el mismo sistema de coordenadas, error de cámara **0,16 cm**, IoU de espacios 0,733 |
 | Fotos de 26 viviendas no vistas en el entrenamiento (estructuras de planos LH) | IoU medio de espacios **0,833**, exhaustividad / precisión de puertas **0,85 / 0,87** |
 | Tipo de estancia (salón / dormitorio / baño / otro), 90 espacios | **84 %** de acierto; **92 %** en el 73 % de espacios que etiqueta |

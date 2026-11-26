@@ -42,8 +42,8 @@ def main(argv: list[str] | None = None) -> int:
 
     vp = sub.add_parser("process", parents=[pr], help="영상을 3D 장면으로 만들기")
     vp.add_argument("video", type=Path)
-    vp.add_argument("--fps", type=float, default=3.0, help="초당 사용할 프레임 수 (기본 3)")
-    vp.add_argument("--max-frames", type=int, default=240)
+    vp.add_argument("--fps", type=float, default=5.0, help="초당 사용할 프레임 수 (기본 5: 흔들린 폰 영상에서도 빈 벽 구간이 이어지게)")
+    vp.add_argument("--max-frames", type=int, default=800)
     vp.add_argument("--photos", type=Path, dest="extra_photos",
                     help="영상과 함께 쓸 사진 폴더(덜 찍힌 방·구석 보충). 영상과 사진을 한 좌표계로 함께 복원")
     pp = sub.add_parser("photos", parents=[pr], help="연결되는 공간의 사진 폴더 → 추정 3D와 2D 도면")

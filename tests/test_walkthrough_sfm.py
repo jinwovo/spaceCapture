@@ -51,3 +51,15 @@ class InteriorTextureTests(unittest.TestCase):
         self.assertGreater(wall.mean(), 180)           # 밝은 벽지
         self.assertGreater(ceiling.mean(), 225)        # 흰 천장
         self.assertFalse(np.array_equal(_texture_interior({"axis": 0, "pos": 0., "lo": 0, "hi": 3, "bottom": 0, "top": 2.3}, 9, 3), wall))  # 면마다 다른 무늬
+
+
+class CaptureWarningTests(unittest.TestCase):
+    def test_few_points_per_view_warns(self):
+        from spacecapture.pipeline import _capture_warnings
+        class Rec:
+            def __init__(self, points, views): self.p, self.v = points, views
+            def num_points3D(self): return self.p
+            def num_reg_images(self): return self.v
+        self.assertEqual(_capture_warnings(Rec(60000, 470), photos=False), [])
+        self.assertIn("천천히", _capture_warnings(Rec(8000, 310), photos=False)[0])
+        self.assertIn("겹치는", _capture_warnings(Rec(1000, 50), photos=True)[0])

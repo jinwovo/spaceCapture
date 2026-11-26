@@ -19,9 +19,9 @@ def _sharpness(frame: np.ndarray) -> float:
 def extract_frames(
     video: Path,
     out_dir: Path,
-    target_fps: float = 3.0,
+    target_fps: float = 5.0,
     min_frames: int = 60,
-    max_frames: int = 240,
+    max_frames: int = 800,
     max_side: int = 1600,
     log=print,
 ) -> dict:

@@ -142,12 +142,31 @@ def smooth_noise(rng, n, scale, corr=.9):
     return out
 
 
-def handheld(poses, seed):
-    """손으로 들고 걸을 때의 위치·높이·기울기 흔들림을 포즈에 더한다(정답 포즈도 이 값)."""
-    rng = np.random.default_rng(seed+777); n = len(poses)
-    dx, dz = smooth_noise(rng, n, .025), smooth_noise(rng, n, .025)
-    dy = smooth_noise(rng, n, .06, .97)                      # 촬영 높이 1.45 ± 약 0.1m
-    roll, pitch, yaw = (smooth_noise(rng, n, np.radians(a)) for a in (2.5, 3., 2.))
+def interpolate(poses, sub):
+    """초당 3포즈 경로를 sub배로 촘촘하게(위치 선형, 회전 Rodrigues 보간)."""
+    if sub <= 1:
+        return poses
+    out = []
+    for (Ca, Ra, sa), (Cb, Rb, sb) in zip(poses, poses[1:]):
+        rvec, _ = cv2.Rodrigues(Ra.T @ Rb)
+        for k in range(sub):
+            t = k/sub
+            Rt, _ = cv2.Rodrigues(rvec*t)
+            out.append((Ca+(Cb-Ca)*t, Ra @ Rt, sa if t < .5 else sb))
+    out.append(poses[-1])
+    return out
+
+
+def handheld(poses, seed, fps=3.):
+    """손으로 들고 걸을 때의 흔들림(정답 포즈도 이 값). 느린 흔들림은 fps와 무관하게 같은 시간 규모,
+    fps가 높으면 손 떨림(약 8Hz, ±0.3°)을 더한다 → 프레임마다 번짐 정도가 달라진다."""
+    rng = np.random.default_rng(seed+777); n = len(poses); s = 3./fps
+    dx, dz = smooth_noise(rng, n, .025, .9**s), smooth_noise(rng, n, .025, .9**s)
+    dy = smooth_noise(rng, n, .06, .97**s)                   # 촬영 높이 1.45 ± 약 0.1m
+    roll, pitch, yaw = (smooth_noise(rng, n, np.radians(a), .9**s) for a in (2.5, 3., 2.))
+    if fps > 3:
+        for arr in (roll, pitch, yaw):
+            arr += smooth_noise(rng, n, np.radians(.3), .3)
     out = []
     for i, (C, R, sid) in enumerate(poses):
         C = C + np.array([dx[i], dy[i], dz[i]])
@@ -158,12 +177,13 @@ def handheld(poses, seed):
     return out
 
 
-def phone_effects(frames, poses, seed, focal, effects=("blur", "exposure", "noise", "distortion")):
-    """폰 영상의 화질 효과: 자동 노출·화이트밸런스 변화, 움직임 번짐, 센서 노이즈, 비네팅, 렌즈 왜곡."""
-    rng = np.random.default_rng(seed+999); n = len(frames)
-    gain = np.exp(smooth_noise(rng, n, .1, .95))            # 노출 약 ±10% (폰은 흰 벽이 날아가지 않게 노출을 잡는다)
-    wb = np.exp(np.stack([smooth_noise(rng, n, .025, .97) for _ in range(3)], 1))
-    h, w = frames[0].shape[:2]
+def phone_effects(names, poses, seed, focal, effects=("blur", "exposure", "noise", "distortion"), fps=3., shutter=1/50):
+    """폰 영상 화질 효과를 한 장씩 만들어 돌려준다(메모리 절약): 자동 노출·화이트밸런스, 움직임 번짐,
+    센서 노이즈, 비네팅, 렌즈 왜곡. 번짐 길이 = 셔터(1/50초) 동안의 회전·이동 속도 × 초점거리."""
+    rng = np.random.default_rng(seed+999); n = len(names); s = 3./fps
+    gain = np.exp(smooth_noise(rng, n, .1, .95**s))          # 노출 약 ±10%
+    wb = np.exp(np.stack([smooth_noise(rng, n, .025, .97**s) for _ in range(3)], 1))
+    first = cv2.imread(str(names[0])); h, w = first.shape[:2]
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     r2 = ((xx-w/2)**2+(yy-h/2)**2)/((w/2)**2+(h/2)**2)
     vignette = (1-.28*r2)[..., None]
@@ -171,13 +191,13 @@ def phone_effects(frames, poses, seed, focal, effects=("blur", "exposure", "nois
     xn, yn = (xx-w/2)/focal, (yy-h/2)/focal
     factor = 1+k1*(xn**2+yn**2)
     map_x, map_y = (xn*factor*focal+w/2).astype(np.float32), (yn*factor*focal+h/2).astype(np.float32)
-    out = []
-    for i, img in enumerate(frames):
+    for i, name in enumerate(names):
         a, b = poses[max(0, i-1)], poses[min(n-1, i+1)]
-        rot = np.degrees(np.arccos(np.clip((np.trace(a[1].T@b[1])-1)/2, -1, 1)))/2
-        move = np.linalg.norm(b[0]-a[0])/2
-        length = int(np.clip(rot*focal*np.pi/180*.15 + move*40, 1, 18))  # 셔터 동안 움직인 픽셀
-        f = img.astype(np.float32)
+        dt = (min(n-1, i+1)-max(0, i-1))/fps or 1/fps
+        rot = np.arccos(np.clip((np.trace(a[1].T@b[1])-1)/2, -1, 1))/dt   # rad/s
+        speed = np.linalg.norm(b[0]-a[0])/dt                              # m/s
+        length = int(np.clip((rot*focal + speed*focal/2.5)*shutter, 1, 25))  # 셔터 동안 움직인 픽셀(벽까지 약 2.5m)
+        f = cv2.imread(str(name)).astype(np.float32)
         if length > 1 and "blur" in effects:
             kernel = np.zeros((length, length), np.float32)
             angle = rng.uniform(0, np.pi)
@@ -192,8 +212,7 @@ def phone_effects(frames, poses, seed, focal, effects=("blur", "exposure", "nois
         noise = rng.normal(0, 3.5, f.shape)
         if "noise" in effects:
             f += noise
-        out.append(np.clip(f, 0, 255).astype(np.uint8))
-    return out
+        yield np.clip(f, 0, 255).astype(np.uint8), length
 
 
 def main():
@@ -213,25 +232,28 @@ def main():
     _, seg = auto_meters_per_pixel(image)
     config, _ = render_config(seg, seed=args.plan, room_views=12)
     poses, order = tour(config, seg)
+    poses = interpolate(poses, max(1, int(round(args.fps/3))))   # 30fps면 3fps 경로를 10배로
     if args.phone:
-        poses = handheld(poses, args.plan)
+        poses = handheld(poses, args.plan, args.fps)
     config["poses"] = poses
     config["texture_style"] = args.style
-    print(f"경로: 방 순서 {order}, 프레임 {len(poses)}개", flush=True)
+    print(f"경로: 방 순서 {order}, 프레임 {len(poses)}개 ({args.fps:g}fps)", flush=True)
     generate_property(out, config=config, render_photos=True, seed=args.plan, log=lambda *_: None,
                       truth_metadata={"purpose": "집 전체 걷기 영상 검증", "walk_order": order, "fps": args.fps})
     names = sorted((out/"photos").glob("listing_*.jpg"))
     first = cv2.imread(str(names[0])); h, w = first.shape[:2]
     writer = cv2.VideoWriter(str(out/"walkthrough.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), args.fps, (w, h))
-    frames = [cv2.imread(str(n)) for n in names]
+    blur = []
     if args.phone:  # 정답 사진은 그대로 두고 영상 프레임에만 화질 효과
         gt = json.loads((out/"property.gt.json").read_text(encoding="utf-8"))
-        frames = phone_effects(frames, poses, args.plan, gt["intrinsics"]["focal"])
-        for n, f in zip(names, frames): cv2.imwrite(str(n.with_name("phone_"+n.name)), f, [cv2.IMWRITE_JPEG_QUALITY, 90])
-    for f in frames: writer.write(f)
+        for f, length in phone_effects(names, poses, args.plan, gt["intrinsics"]["focal"], fps=args.fps):
+            writer.write(f); blur.append(length)
+    else:
+        for n in names: writer.write(cv2.imread(str(n)))
     writer.release()
     print(json.dumps({"frames": len(names), "seconds": round(time.perf_counter()-started, 1), "video": str(out/"walkthrough.mp4"),
-                      "duration_s": round(len(names)/args.fps, 1)}, ensure_ascii=False))
+                      "duration_s": round(len(names)/args.fps, 1),
+                      "blur_px": {"median": float(np.median(blur)), "p90": float(np.percentile(blur, 90))} if blur else None}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
