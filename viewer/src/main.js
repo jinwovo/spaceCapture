@@ -197,7 +197,7 @@ async function loadScene(name) {
     houseOverlay=propertyOverlay(THREE,data.property_graph);
     world.add(houseOverlay);
     if (data.property_graph.spaces?.length) {
-      structure=structureModel(THREE,data.property_graph,data.room?.height??2.4);
+      structure=structureModel(THREE,data.property_graph,data.room?.height??2.4,data.floorplan);
       world.add(structure);
     }
   }

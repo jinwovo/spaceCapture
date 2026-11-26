@@ -351,6 +351,13 @@ def _write_scene(scene_dir: Path, scene: dict) -> None:
         scene["files"]["property_plan"] = "property.svg"
         (scene_dir/"property_graph.json").write_text(json.dumps(scene["property_graph"],ensure_ascii=False,indent=1),encoding="utf-8")
         write_property_svg(scene_dir,scene["property_graph"],scene.get("source",{}).get("title",scene["name"])+" · 공간 연결 후보")
+    try:  # 공유 벽선 도면 모델: 2D 도면과 뷰어 구조 모형이 함께 쓴다
+        from .plan_model import build as build_floorplan
+        scene["floorplan"] = build_floorplan(scene)
+        if scene["floorplan"] is None: scene.pop("floorplan")
+    except Exception as error:
+        scene.pop("floorplan", None)
+        scene.setdefault("quality", {}).setdefault("notes", []).append(f"도면 모델 실패: {str(error)[:120]}")
     try:  # 국내 매물 평면도 양식의 도면 (실패해도 분석 결과 저장은 계속)
         from .plan_render import render
         summary = render(scene, scene_dir, title=scene.get("source", {}).get("title") or scene["name"])

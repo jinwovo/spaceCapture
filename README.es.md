@@ -25,6 +25,7 @@ Igual que un coche construye una imagen 3D de su entorno con sus cámaras, space
 - **3D fotorrealista**: Gaussian Splatting con Brush, que funciona en GPU AMD e Intel mediante WebGPU.
 - **Plano 2D al estilo inmobiliario coreano** (`plan.png` / `plan.svg`): paredes negras, suelos de madera y baldosa, apertura de puertas, cotas en mm, ㎡ y pyeong (평).
 - **3D más limpio**: detección de características de bajo contraste para paredes blancas lisas en vídeo y eliminación automática de splats flotantes fuera de la vivienda.
+- **Modelo de muros limpio**: todas las estancias se ajustan a líneas de muro compartidas; los huecos estrechos entre estancias pasan a ser muros con su grosor medido, los muros exteriores quedan fuera de las estancias y las puertas se abren en los muros. El plano 2D (muros sólidos, apertura de puertas, superficies netas) y la casa de muñecas 3D (muros cortados a 1,1 m) usan el mismo modelo sin perder precisión (IoU de prueba LH 0,833 → 0,828; vídeos 0,698 → 0,703).
 - **Modelo estructural**: una "casa de muñecas" limpia con paredes y huecos de puerta reconstruidos a partir de los espacios detectados, con nombres y superficies.
 - **Visor web**: modos órbita, paseo y planta, medición entre dos puntos, calibración de escala y 16 muebles predefinidos con ajuste a pared y detección de colisiones.
 

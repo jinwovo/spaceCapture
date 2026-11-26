@@ -60,146 +60,38 @@ def _orthogonal(contour, eps):
 
 
 def build_plan(scene):
-    """scene → 도면 기하(미터). 공간 후보가 없으면 방 상자를 한 공간으로 쓴다."""
-    graph = scene.get("property_graph") or {}
-    spaces = [s for s in graph.get("spaces", []) if len(s.get("polygon_xz", [])) >= 3]
-    box_ok = scene.get("layout", {}).get("room_box_supported", True) is not False and "room" in scene
-    if not spaces or (len(spaces) == 1 and box_ok):  # 방 하나면 측정한 직사각형 방 상자를 쓴다
-        room = scene["room"]
-        usage = spaces[0].get("usage_candidates", []) if spaces else []
-        estimate = spaces[0].get("usage_estimate") if spaces else None
-        x0, z0, x1, z1 = room["min"][0], room["min"][2], room["max"][0], room["max"][2]
-        spaces = [{"id": "room", "polygon_xz": [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], "usage_candidates": usage,
-                   "usage_estimate": estimate}]
-    allp = np.vstack([np.array(s["polygon_xz"], float) for s in spaces])
-    low = allp.min(0)-1.
-    shape = (int(np.ceil((allp.max(0)[1]-low[1]+1.)/CELL))+1, int(np.ceil((allp.max(0)[0]-low[0]+1.)/CELL))+1)
-    labels = np.zeros(shape, np.int32)
-    order = sorted(range(len(spaces)), key=lambda i: -cv2.contourArea(np.array(spaces[i]["polygon_xz"], np.float32)))
-    k = cv2.getStructuringElement(cv2.MORPH_RECT, (int(.4/CELL) | 1,)*2)
-    for i in order:
-        mask = np.zeros(shape, np.uint8)
-        cv2.fillPoly(mask, [_grid(spaces[i]["polygon_xz"], low, shape)], 1)
-        mask = cv2.morphologyEx(cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k), cv2.MORPH_OPEN, k)
-        labels[(mask > 0) & (labels == 0)] = i+1
+    """scene → 도면 기하(미터). 공유 벽선 도면 모델(plan_model) + 강한 근거 가구."""
+    from .plan_model import build
+    model = scene.get("floorplan") if (scene.get("floorplan") or {}).get("version") else None
+    model = model or build(scene)
+    if not model or not model["rooms"]:
+        return {"rooms": [], "walls": [], "doors": [], "patches": [], "unobserved": [], "objects": [], "extent": [[0, 0], [1, 1]]}
     rooms = []
-    for i, space in enumerate(spaces):
-        mask = (labels == i+1).astype(np.uint8)
-        if mask.sum()*CELL**2 < .8:
-            continue
-        found, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contour = _orthogonal(max(found, key=cv2.contourArea).reshape(-1, 2), .12/CELL)
-        contour = np.round(contour).astype(np.float64)
-        mask = np.zeros(shape, np.uint8); cv2.fillPoly(mask, [np.round(contour).astype(np.int32)], 1)
-        mask &= (labels == 0) | (labels == i+1)
-        labels[labels == i+1] = 0; labels[mask > 0] = i+1
-        if mask.sum()*CELL**2 < .8:
-            continue
-        usage = [u["usage"] for u in space.get("usage_candidates", [])]
-        estimate = space.get("usage_estimate") or {}
-        if estimate.get("usage"):  # 사물 근거 우선, 없으면 공간 기하 모델 추정(room_types.estimate_usage)
-            usage = [estimate["usage"]]
-        ys, xs = np.nonzero(mask)
-        dist = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
-        cy, cx = np.unravel_index(np.argmax(dist), dist.shape)
-        grown, _ = cv2.findContours(cv2.dilate(mask, np.ones((3, 3), np.uint8)), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        rooms.append({"id": space["id"], "label_index": i, "mask": mask,
-                      "outline": (max(grown, key=cv2.contourArea).reshape(-1, 2)*CELL+low).tolist(),
-                      "area_m2": float(cv2.contourArea(contour.astype(np.float32))*CELL**2), "usage": usage[0] if len(usage) == 1 else None,
-                      "anchor": [cx*CELL+low[0], cy*CELL+low[1]],
-                      "bbox": [contour[:, 0].min()*CELL+low[0], contour[:, 1].min()*CELL+low[1],
-                               contour[:, 0].max()*CELL+low[0], contour[:, 1].max()*CELL+low[1]]})
-    # 붙어 있는 두 방 사이에도 벽 두께가 보이도록 경계에서 양쪽을 반씩 깎는다.
-    half = max(1, int(round(WALL/2/CELL)))
-    trimmed = labels.copy()
-    for room in rooms:
-        i = room["label_index"]+1
-        others = ((labels > 0) & (labels != i)).astype(np.uint8)
-        near = cv2.dilate(others, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*half+1,)*2)) > 0
-        trimmed[(labels == i) & near] = 0
-    labels = trimmed
-    for room in rooms:
-        mask = (labels == room["label_index"]+1).astype(np.uint8)
-        grown, _ = cv2.findContours(cv2.dilate(mask, np.ones((3, 3), np.uint8)), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        room["mask"] = mask  # 면적·치수는 깎기 전 관측 영역 기준을 유지한다
-        raw, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        room["edge"] = (max(raw, key=cv2.contourArea).reshape(-1, 2)*CELL+low+CELL/2).tolist() if raw else []
-        room["outline"] = (max(grown, key=cv2.contourArea).reshape(-1, 2)*CELL+low).tolist()
-    occupied = labels > 0
-    wall_px = int(round(WALL/CELL))
-    disk = lambda r: cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*r+1,)*2)
-    # 집 외곽: 방들을 1m로 닫고 구멍을 채운 범위. 그 안의 빈 칸 중 얇은 것은 벽, 넓은 것은 미관측.
-    closed = cv2.morphologyEx(occupied.astype(np.uint8), cv2.MORPH_CLOSE, disk(int(.5/CELL)))
-    outer, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    footprint = np.zeros(shape, np.uint8); cv2.drawContours(footprint, outer, -1, 1, -1)
-    unknown = (footprint > 0) & ~occupied
-    wide = cv2.morphologyEx(unknown.astype(np.uint8), cv2.MORPH_OPEN, disk(int(.25/CELL))) > 0
-    band = cv2.dilate(footprint, disk(wall_px)) > 0
-    wall = (band & ~occupied & ~wide) | (unknown & ~wide)
-    wall |= (cv2.dilate(wide.astype(np.uint8), disk(2)) > 0) & ~wide
-    wall &= ~occupied
-    found_u, _ = cv2.findContours(wide.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    unobserved = [(c.reshape(-1, 2)*CELL+low).tolist() for c in found_u if cv2.contourArea(c)*CELL**2 >= .3]
-    doors = []
-    id_to_room = {r["id"]: r for r in rooms}
-    for portal in graph.get("portals", []):
-        if portal.get("status") != "image_supported":
-            continue
-        a, b = (id_to_room.get(s) for s in portal["spaces"])
-        if a is None or b is None:
-            continue
-        c = np.array(portal["center_xz"], float)
-        pc = _grid(c, low, shape)
-        def nearest(room):
-            ys, xs = np.nonzero(room["mask"]); d = (xs-pc[0])**2+(ys-pc[1])**2; j = np.argmin(d)
-            return np.array([xs[j], ys[j]])*CELL+low
-        pa, pb = nearest(a), nearest(b)
-        normal = pb-pa
-        axis = 0 if abs(normal[0]) >= abs(normal[1]) else 1  # 벽을 가로지르는 축
-        width = float(np.clip(portal["width_m"], .7, 2.4))
-        mid = (pa+pb)/2
-        along = 1-axis
-        lo, hi = mid[along]-width/2, mid[along]+width/2
-        cut = np.zeros(shape, np.uint8)
-        p0 = np.array([0., 0.]); p1 = np.array([0., 0.])
-        p0[along], p1[along] = lo, hi
-        p0[axis], p1[axis] = min(pa[axis], pb[axis])-.05, max(pa[axis], pb[axis])+.05
-        g0, g1 = _grid(p0, low, shape), _grid(p1, low, shape)
-        cv2.rectangle(cut, tuple(map(int, g0)), tuple(map(int, g1)), 1, -1)
-        wall &= cut == 0
-        small = a if a["area_m2"] <= b["area_m2"] else b
-        inner = pa if small is a else pb
-        doors.append({"cut": [p0.tolist(), p1.tolist()], "axis": axis, "lo": lo, "hi": hi, "wall_a": float(min(pa[axis], pb[axis])), "wall_b": float(max(pa[axis], pb[axis])),
-                      "into": float(inner[axis]), "direction": 1. if inner[axis] > mid[axis] else -1., "width": width,
-                      "leaf": width <= 1.2})
-    found, hierarchy = cv2.findContours(wall.astype(np.uint8), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    walls = []  # (바깥 윤곽, [구멍]) — 구멍까지 채우지 않도록 짝지어 둔다
-    if hierarchy is not None:
-        for i, c in enumerate(found):
-            if hierarchy[0][i][3] != -1 or cv2.contourArea(c) < 4: continue
-            holes, child = [], hierarchy[0][i][2]
-            while child != -1:
-                holes.append((found[child].reshape(-1, 2)*CELL+low).tolist()); child = hierarchy[0][child][0]
-            walls.append(((c.reshape(-1, 2)*CELL+low).tolist(), holes))
+    for r in model["rooms"]:
+        rooms.append({"id": r["id"], "outline": r["interior_polygon_xz"], "area_m2": r["area_m2"], "usage": r["usage"],
+                      "anchor": r["anchor_xz"], "bbox": r["bbox_xz"], "inradius": r.get("inradius_m", 1.), "grid_bbox": [*np.min(r["polygon_xz"], 0), *np.max(r["polygon_xz"], 0)]})
+    graph = scene.get("property_graph") or {}
+    usage_by_id = {s["id"]: [u["usage"] for u in s.get("usage_candidates", [])] for s in graph.get("spaces", [])}
+    def room_at(x, z, usage):
+        for r in rooms:
+            if usage in usage_by_id.get(r["id"], []) and cv2.pointPolygonTest(np.asarray(r["outline"], np.float32), (float(x), float(z)), False) >= 0:
+                return True
+        return False
     objects = []
     # 가구 아이콘도 용도 후보와 같은 강한 근거(사진 3장·점수 0.6)만 그린다. 주방 가전·세면대는 오검출이
     # 잦아(TUM 사무실: 수납장→냉장고, 접시→싱크대) 해당 공간에 주방·욕실 후보가 있을 때만 그린다.
-    contexts = {}
-    for room in rooms:
-        for u in spaces[room["label_index"]].get("usage_candidates", []):
-            contexts.setdefault(u["usage"], []).append(room)
-    def in_rooms(x, z, usage):
-        g = _grid([x, z], low, shape)
-        return any(r["mask"][min(max(g[1], 0), shape[0]-1), min(max(g[0], 0), shape[1]-1)] for r in contexts.get(usage, []))
     for o in (scene.get("objects") or {}).get("instances", []):
         if o["class"] not in FURNITURE or o.get("view_count", 0) < 3 or o.get("max_score", 0) < .6:
             continue
         x, z = o["position"][0], o["position"][2]
-        if o["class"] in ("refrigerator", "oven", "microwave") and not in_rooms(x, z, "kitchen"): continue
-        if o["class"] == "sink" and not (in_rooms(x, z, "kitchen") or in_rooms(x, z, "bathroom")): continue
+        if o["class"] in ("refrigerator", "oven", "microwave") and not room_at(x, z, "kitchen"): continue
+        if o["class"] == "sink" and not (room_at(x, z, "kitchen") or room_at(x, z, "bathroom")): continue
         objects.append({"class": o["class"], "label": o["label"], "x": x, "z": z})
-    return {"rooms": rooms, "walls": walls, "unobserved": unobserved, "wall_mask": wall, "low": low.tolist(), "shape": shape, "doors": doors,
-            "objects": objects, "extent": [allp.min(0).tolist(), allp.max(0).tolist()]}
+    pts = np.array([q for w in model["walls"] for q in (w["rect_xz"][:2], w["rect_xz"][2:])] +
+                   [q for r in rooms for q in r["outline"]], float)
+    return {"rooms": rooms, "walls": [w["rect_xz"] for w in model["walls"]], "doors": model["doors"], "patches": model.get("floor_patches", []),
+            "unobserved": model["unobserved"], "objects": objects, "extent": [pts.min(0).tolist(), pts.max(0).tolist()],
+            "model": model}
 
 
 def _chain(values, merge=.25, min_len=.45):
@@ -243,36 +135,38 @@ def render(scene, out_dir: Path, title=None):
     P = lambda x, z: (ox+x*s, oz+z*s)
     prims = []
     for r in plan["rooms"]:
-        pts = [P(x, z) for x, z in r["outline"]]
-        prims.append(("poly", pts, "tile" if r["usage"] == "bathroom" else "wood"))
-    for outer, holes in plan["walls"]:
-        prims.append(("wall", [P(x, z) for x, z in outer], [[P(x, z) for x, z in h] for h in holes]))
-    for r in plan["rooms"]:  # 방 경계를 벽 두께로 덧그려 방 사이 벽이 얇게 보이지 않게 한다
-        if r.get("edge"): prims.append(("stroke", [P(x, z) for x, z in r["edge"]], WALL*s))
-    for d in plan["doors"]:  # 문턱도 바닥으로 이어서 그린다
-        (x0, z0), (x1, z1) = d["cut"]
+        prims.append(("poly", [P(x, z) for x, z in r["outline"]], "tile" if r["usage"] == "bathroom" else "wood"))
+    for x0, z0, x1, z1 in plan["patches"]:  # 문턱(벽 두께만큼)과 문틀 잡티 자리도 바닥으로 잇는다
         prims.append(("poly", [P(x0, z0), P(x1, z0), P(x1, z1), P(x0, z1)], "wood"))
     for u in plan["unobserved"]:
         prims.append(("poly", [P(x, z) for x, z in u], "hatch"))
+    # 벽 사각형을 한 경로로 그려(같은 방향 부분 경로의 합집합) 사각형 사이 이음선이 생기지 않게 한다
+    prims.append(("walls", [[P(x0, z0), P(x1, z0), P(x1, z1), P(x0, z1)] for x0, z0, x1, z1 in plan["walls"]]))
     for o in plan["objects"]:
         w, d = FURNITURE[o["class"]]
         prims.append(("furniture", o["class"], P(o["x"], o["z"]), (w*s, d*s)))
-
     for d in plan["doors"]:
         if not d["leaf"]:
             continue
-        hinge = [0., 0.]; hinge[1-d["axis"]] = d["lo"]; hinge[d["axis"]] = d["wall_a"] if d["direction"] > 0 else d["wall_b"]
-        leaf_end = list(hinge); leaf_end[d["axis"]] += d["direction"]*d["width"]
-        other = list(hinge); other[1-d["axis"]] = d["hi"]
-        prims.append(("door", P(*hinge), P(*leaf_end), P(*other), d["width"]*s))
+        face = d["across"][1] if d["swing"] > 0 else d["across"][0]  # 문이 열리는 방 쪽 벽면
+        pt = (lambda acr, along: (acr, along)) if d["axis"] == "x" else (lambda acr, along: (along, acr))
+        hinge, leaf_end, other = pt(face, d["lo"]), pt(face+d["swing"]*d["width_m"], d["lo"]), pt(face, d["hi"])
+        prims.append(("door", P(*hinge), P(*leaf_end), P(*other), d["width_m"]*s))
     for r in plan["rooms"]:
         x, y = P(*r["anchor"])
         area = r["area_m2"]
-        prims.append(("text", x, y-6, r["name"], 21, True, COLORS["text"], "middle"))
+        room_w = (r["bbox"][2]-r["bbox"][0])*s; room_h = (r["bbox"][3]-r["bbox"][1])*s
         sub = f"{area:.1f}㎡ ({area/PYEONG:.1f}평)" + (" · 추정" if r["estimated"] else "")
-        prims.append(("text", x, y+20, sub, 14, False, COLORS["sub"], "middle"))
-    xs = _chain([v for r in plan["rooms"] for v in (r["bbox"][0], r["bbox"][2])])
-    zs = _chain([v for r in plan["rooms"] for v in (r["bbox"][1], r["bbox"][3])])
+        free = 2*r["inradius"]*s  # 글자 자리 중심에서 가장 가까운 벽까지 거리의 두 배(px)
+        if room_w >= 8.5*len(sub) and room_h >= 60 and free >= 75:  # 이름 + 면적 두 줄
+            prims.append(("text", x, y-6, r["name"], 21, True, COLORS["text"], "middle"))
+            prims.append(("text", x, y+20, sub, 14, False, COLORS["sub"], "middle"))
+        else:  # 좁은 방: 글자를 줄이고 면적은 짧게
+            size = int(np.clip(min(room_w, 1.6*free)/max(3, len(r["name"]))/1.1, 11, 17))
+            prims.append(("text", x, y-2, r["name"], size, True, COLORS["text"], "middle"))
+            if free >= 2.6*size: prims.append(("text", x, y+size, f"{area:.1f}㎡", max(10, size-4), False, COLORS["sub"], "middle"))
+    xs = _chain([v for r in plan["rooms"] for v in (r["grid_bbox"][0], r["grid_bbox"][2])])
+    zs = _chain([v for r in plan["rooms"] for v in (r["grid_bbox"][1], r["grid_bbox"][3])])
     top = oz+ez0*s-60
     right = ox+ex1*s+60
     for chain, horizontal in ((xs, True), (zs, False)):
@@ -281,6 +175,17 @@ def render(scene, out_dir: Path, title=None):
                 prims.append(("line", (ox+v*s, top-12), (ox+v*s, top+12), COLORS["dim"], 1.4))
             else:
                 prims.append(("line", (right-12, oz+v*s), (right+12, oz+v*s), COLORS["dim"], 1.4))
+        if len(chain) < 2:
+            continue
+        if len(chain) == 2:  # 구간이 하나면 전체 치수만 굵게
+            a, b = chain
+            if horizontal:
+                prims.append(("line", (ox+a*s, top), (ox+b*s, top), COLORS["dim"], 1))
+                prims.append(("text", ox+(a+b)/2*s, top-8, f"{round((b-a)*100)*10:,}", 15, True, COLORS["dim"], "middle"))
+            else:
+                prims.append(("line", (right, oz+a*s), (right, oz+b*s), COLORS["dim"], 1))
+                prims.append(("text", right+14, oz+(a+b)/2*s, f"{round((b-a)*100)*10:,}", 15, True, COLORS["dim"], "vstart"))
+            continue
         if horizontal:
             prims.append(("line", (ox+chain[0]*s, top), (ox+chain[-1]*s, top), COLORS["dim"], 1))
             prims.append(("line", (ox+chain[0]*s, top-40), (ox+chain[-1]*s, top-40), COLORS["dim"], 1))
@@ -344,6 +249,9 @@ def _svg(prims, W, H):
         elif p[0] == "wall":
             d = "".join("M"+"L".join(f"{x:.1f} {y:.1f}" for x, y in ring)+"Z" for ring in [p[1]]+p[2])
             body.append(f'<path d="{d}" fill="{COLORS["wall"]}" fill-rule="evenodd"/>')
+        elif p[0] == "walls":
+            d = "".join("M"+"L".join(f"{x:.2f} {y:.2f}" for x, y in ring)+"Z" for ring in p[1])
+            body.append(f'<path d="{d}" fill="{COLORS["wall"]}" fill-rule="nonzero"/>')
         elif p[0] == "door":
             (hx, hy), (lx, ly), (ox_, oy_), r = p[1], p[2], p[3], p[4]
             sweep = 1 if ((lx-hx)*(oy_-hy)-(ly-hy)*(ox_-hx)) < 0 else 0
@@ -401,6 +309,10 @@ def _png(prims, W, H, path):
             mask = Image.new("L", img.size, 0); md = ImageDraw.Draw(mask)
             md.polygon(S(p[1]), fill=255)
             for hole in p[2]: md.polygon(S(hole), fill=0)
+            img.paste(Image.new("RGB", img.size, COLORS["wall"]), (0, 0), mask)
+        elif p[0] == "walls":
+            mask = Image.new("L", img.size, 0); md = ImageDraw.Draw(mask)
+            for ring in p[1]: md.polygon(S(ring), fill=255)
             img.paste(Image.new("RGB", img.size, COLORS["wall"]), (0, 0), mask)
         elif p[0] == "door":
             (hx, hy), (lx, ly), (ox_, oy_), r = p[1], p[2], p[3], p[4]

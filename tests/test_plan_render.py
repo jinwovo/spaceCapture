@@ -24,7 +24,7 @@ class PlanRenderTests(unittest.TestCase):
         self.assertEqual(len(plan["doors"]), 1)
         areas = sorted(r["area_m2"] for r in plan["rooms"])
         self.assertAlmostEqual(areas[0], 2.8*3, delta=1.2)
-        self.assertTrue(all(len(h) >= 1 for _, h in plan["walls"]))      # 방 자리는 벽의 구멍
+        self.assertTrue(plan["walls"] and all(len(w) == 4 for w in plan["walls"]))  # 벽은 사각형 목록
         # 주방·욕실 후보가 없는 공간의 세면대 아이콘은 그리지 않는다
         self.assertEqual([o["class"] for o in plan["objects"]], ["bed"])
 
@@ -33,7 +33,7 @@ class PlanRenderTests(unittest.TestCase):
             summary = render(scene("bedroom"), Path(temp))
             svg = (Path(temp)/"plan.svg").read_text(encoding="utf-8")
             self.assertTrue((Path(temp)/"plan.png").stat().st_size > 10_000)
-            self.assertIn('fill-rule="evenodd"', svg)
+            self.assertIn('fill-rule="nonzero"', svg)
             self.assertIn("침실1", svg); self.assertIn("공간 1", svg); self.assertIn("평)", svg)
             names = {r["name"]: r["estimated"] for r in summary["rooms"]}
             self.assertEqual(names, {"공간 1": False, "침실1": True})

@@ -25,6 +25,7 @@ Like a car that builds a 3D picture of its surroundings from its cameras, spaceC
 - **Photorealistic 3D** with Gaussian splatting (Brush, runs on AMD/Intel GPUs via WebGPU).
 - **Korean real-estate style 2D plan** (`plan.png` / `plan.svg`): black walls, wood/tile floors, door swings, mm dimension chains, ㎡ and 평.
 - **Cleaner 3D**: low-contrast feature detection for plain white walls in videos, and automatic removal of floating splats outside the home.
+- **Clean wall model**: all rooms snap to shared wall lines; thin gaps between rooms become real walls with their measured thickness, exterior walls sit outside the rooms, doors are cut into the walls. The 2D plan (solid walls, door swings, net areas) and the 3D dollhouse (walls cut at 1.1 m) use the same model, with no loss of room accuracy (LH test IoU 0.833 → 0.828, walk-through videos 0.698 → 0.703).
 - **Structure model**: a clean "dollhouse" of walls and door openings rebuilt from the detected spaces, with room names and areas.
 - **Web viewer**: orbit / walk / plan modes, two-point measurement, scale calibration, 16 furniture presets with wall snapping and collision checks.
 

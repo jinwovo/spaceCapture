@@ -115,7 +115,44 @@ export function propertyOverlay(THREE, graph) {
 
 const FLOOR_COLOR={living:0xe8d6b4,bedroom:0xd4e2ef,bathroom:0xcde6e0,kitchen:0xefe0c4};
 // 복원된 공간 윤곽으로 세운 구조 모형(모형 집): 사진 근거가 있는 문 자리는 비우고, 바닥은 용도별 색.
-export function structureModel(THREE, graph, height=2.4) {
+// 공유 벽선 도면 모델(scene.floorplan)로 만든 구조 모형: 두께 있는 벽, 문 위 인방, 벽 윗면 단면색, 용도별 바닥.
+const PLAN_FLOOR={living:0xd9bf96,bedroom:0xe2cba6,bathroom:0xc8d1d4,kitchen:0xd6c09c};
+function planModel(THREE, plan, height) {
+  const group=new THREE.Group();
+  // 내려다보는 모형이라 벽을 1.1m에서 자른 단면으로 보여 준다(문 자리는 비움).
+  const cut=Math.min(1.1,height);
+  const sides=[], caps=[];
+  const box=(x0,z0,x1,z1,y0,y1)=>{  // 옆면 4개(바깥 법선) + 윗면은 단면색으로 따로
+    const q=(a,b,c,d,n)=>{ for (const v of [a,b,c,a,c,d]) sides.push(...v,...n); };
+    q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],[0,0,1]);
+    q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],[0,0,-1]);
+    q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[1,0,0]);
+    q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],[-1,0,0]);
+    if (y0>0) q([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[0,-1,0]);
+    caps.push(x0,y1+.002,z0, x0,y1+.002,z1, x1,y1+.002,z1, x0,y1+.002,z0, x1,y1+.002,z1, x1,y1+.002,z0);
+  };
+  for (const w of plan.walls) { const [x0,z0,x1,z1]=w.rect_xz; box(x0,z0,x1,z1,0,cut); }
+  const geo=new THREE.BufferGeometry(), arr=new Float32Array(sides);
+  const ib=new THREE.InterleavedBuffer(arr,6);
+  geo.setAttribute('position',new THREE.InterleavedBufferAttribute(ib,3,0));
+  geo.setAttribute('normal',new THREE.InterleavedBufferAttribute(ib,3,3));
+  group.add(new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0xfaf8f4,emissive:0x5a5852,roughness:.9,metalness:0})));
+  const capGeo=new THREE.BufferGeometry(); capGeo.setAttribute('position',new THREE.Float32BufferAttribute(caps,3)); capGeo.computeVertexNormals();
+  group.add(new THREE.Mesh(capGeo,new THREE.MeshBasicMaterial({color:0x3b3d40,side:THREE.DoubleSide})));
+  const floorMesh=(poly,color,y)=>{
+    const shape=new THREE.Shape(poly.map(([x,z])=>new THREE.Vector2(x,z)));
+    const m=new THREE.Mesh(new THREE.ShapeGeometry(shape).rotateX(Math.PI/2),
+      new THREE.MeshStandardMaterial({color,roughness:.95,side:THREE.DoubleSide}));
+    m.position.y=y; group.add(m);
+  };
+  for (const r of plan.rooms) floorMesh(r.interior_polygon_xz,PLAN_FLOOR[r.usage]??0xdccfbb,.004);
+  for (const [x0,z0,x1,z1] of plan.floor_patches??[]) floorMesh([[x0,z0],[x1,z0],[x1,z1],[x0,z1]],0xd2bc98,.003);
+  for (const u of plan.unobserved??[]) floorMesh(u,0xb9bcc0,.003);
+  return group;
+}
+
+export function structureModel(THREE, graph, height=2.4, plan=null) {
+  if (plan?.walls?.length) return planModel(THREE, plan, height);
   const group=new THREE.Group();
   const doors=graph.portals.filter(p=>p.status==='image_supported');
   const wallMat=new THREE.MeshStandardMaterial({color:0xf3f1ec,roughness:.9,side:THREE.DoubleSide,transparent:true,opacity:.92});
