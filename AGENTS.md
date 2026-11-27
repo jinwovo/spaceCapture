@@ -268,6 +268,9 @@ marker_150mm.pdf         인쇄용 마커 (DICT_4X4_50 id 0, 검은 사각형 15
    - 저장 장면: 9번 g1 IoU 0.686→0.701·문 재현율 0.67→0.83, 나머지 동일. 227번 새 재처리(`lh-plan-0227-day2`)는 공간 6/5·IoU 0.636이지만 기존 규칙도 같아 SfM 실행 간 변동(같은 사진 0.620~0.784).
    - 회귀: Python **90개** 통과, 영상 전체 재처리 `synth-day2-regression` **+2.9/+2.1cm**(57/59, RMSE 0.18cm), synth +2.8/+3.1cm, 천장 활성화 검사 통과.
    - 남은 한계: 실제 시험 IoU 약 0.71(분할 단위·관측 영역 모양 차이), 정답 변환은 덩어리 닫힘 방식으로 방을 더 합치는 경향(문짝 선 인식 미구현), 높이·배율 정상이며 집 안에서 약 2m 어긋난 사진 묶음 미검출, 실제 매물 사진 검증 0건.
+0. **[관측 경계 점선 · 윤곽 다듬기 — 2026-11-27]** 큰 열린 공간(Hypersim)에서 관측 영역 끝이 계단 모양 두꺼운 벽으로 그려져 조잡했다.
+   - `plan_model.build(scene, points=)`: 바깥·미관측 쪽 경계마다 ±0.3m 안의 벽 높이 점(0.2m~천장-0.1m)을 세어 1m당 1개 미만이면 벽을 세우지 않고 `open_edges`(관측 경계)로 남긴다. 평면도는 회색 점선+안내 문구, 뷰어는 바닥 점선. 길이 가중 비율: LH·걷기 영상 0~9%, Hypersim 26~53%. `_write_scene`이 points.ply를 넘긴다.
+   - 방마다 0.5m 닫힘·열림으로 윤곽 다듬기(`smooth_m`). LH 시험 IoU 0.828→0.832, 학습 0.742→0.742, 걷기 영상 0.703→0.702.
 0. **[Hypersim 가구 상자 검증·개선 — 2026-11-27]** [상세](docs/object-recognition.md#hypersim-사실적-렌더-집으로-검증-2026-11-27)
    - 자료: Apple Hypersim(데이터 CC BY-SA 3.0, 평가 전용, `samples/external/hypersim/`, 저장소 미포함). 장면 ZIP(약 2GB)에서 HTTP Range로 필요한 파일만 받는다(`tools/remote_zip.py`, `tools/fetch-hypersim.py`, 장면당 약 7MB·15초). cam_00 사진 100장, 카메라, 사물별 3D 상자, NYU40 분할(3프레임마다)로 사물 종류 다수결(`tools/hypersim_gt.py`). h5py(BSD)는 `requirements-tools.txt`.
    - 실행: `sh tools/run-hypersim.sh <장면…>`(정답 미사용 `photos` 처리, 장면 `hs-<id>`), 평가 `tools/validate-hypersim-boxes.py <장면…> [--refit] [--set 키=값]`(우리 카메라를 정답 카메라에 닮음 정렬해 우리 상자를 정답 좌표로 옮김, 카메라 정렬 10cm 초과 장면 제외). 결과 `artifacts/hypersim/`.

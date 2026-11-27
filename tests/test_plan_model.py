@@ -59,3 +59,18 @@ class PlanModelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OpenEdgeTests(unittest.TestCase):
+    def test_edges_without_wall_points_become_open(self):
+        import numpy as np
+        rng = np.random.default_rng(0)
+        # 방 a의 왼쪽(x=0) 벽에만 벽 점이 있다
+        pts = np.c_[rng.uniform(-.05, .05, 300), rng.uniform(.3, 2., 300), rng.uniform(0, 3, 300)]
+        s = scene(.2); s["room"] = {"height": 2.4}
+        m = build(s, points=pts)
+        self.assertTrue(m["open_edges"])
+        self.assertTrue(any(w["exterior"] and w["rect_xz"][2] <= 0 for w in m["walls"]))   # 근거 있는 왼쪽 벽은 유지
+        self.assertFalse(any(w["exterior"] and w["rect_xz"][0] >= 7 for w in m["walls"]))  # 근거 없는 오른쪽 바깥은 벽 없음
+        self.assertTrue(any(abs(e[0]-7) < 1e-6 and abs(e[2]-7) < 1e-6 for e in m["open_edges"]))
+        self.assertEqual(len(build(s)["open_edges"]), 0)   # 점을 안 주면 기존처럼 모두 벽

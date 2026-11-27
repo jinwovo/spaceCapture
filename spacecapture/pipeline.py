@@ -353,7 +353,10 @@ def _write_scene(scene_dir: Path, scene: dict) -> None:
         write_property_svg(scene_dir,scene["property_graph"],scene.get("source",{}).get("title",scene["name"])+" · 공간 연결 후보")
     try:  # 공유 벽선 도면 모델: 2D 도면과 뷰어 구조 모형이 함께 쓴다
         from .plan_model import build as build_floorplan
-        scene["floorplan"] = build_floorplan(scene)
+        plan_points = None
+        if (scene_dir/"points.ply").exists():  # 바깥 경계마다 벽 점 근거를 센다(없으면 관측 경계선)
+            v = read_vertices(scene_dir/"points.ply"); plan_points = np.stack([v["x"], v["y"], v["z"]], 1)
+        scene["floorplan"] = build_floorplan(scene, points=plan_points)
         if scene["floorplan"] is None: scene.pop("floorplan")
         else:  # 가구 상자의 앞쪽(벽 반대쪽) 방향
             from .object_boxes import mark_display, orient

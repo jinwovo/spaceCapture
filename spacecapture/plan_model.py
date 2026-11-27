@@ -18,7 +18,7 @@ import numpy as np
 
 VERSION = 1
 SETTINGS = {"cell_m": .05, "line_tol_m": .1, "min_gap_m": 0., "fill_gap_m": 0., "wall_max_m": .45, "touch_m": .12,
-            "min_room_m2": .8, "hole_fill_m2": .3, "exterior_m": .2, "interior_m": .12, "door_min_m": .6,
+            "min_room_m2": .8, "smooth_m": .5, "support_window_m": .3, "support_min_per_m": 1., "hole_fill_m2": .3, "exterior_m": .2, "interior_m": .12, "door_min_m": .6,
             "door_max_leaf_m": 1.2, "door_margin_m": .05, "jamb_min_m": .25}
 
 
@@ -111,7 +111,27 @@ def _usage(space):
     return usage[0] if len(usage) == 1 else None
 
 
-def build(scene, settings=None):
+class _WallSupport:
+    """벽 높이(0.2m~천장-0.1m) 점의 x·z 누적 격자. 사각형 안 점 수를 빠르게 센다."""
+    def __init__(self, points, height, step=.05):
+        P = np.asarray(points, float)
+        P = P[(P[:, 1] > .2) & (P[:, 1] < max(1., height-.1))]
+        self.ok = len(P) > 0
+        if not self.ok: return
+        self.low, self.step = P[:, [0, 2]].min(0)-1, step
+        idx = np.floor((P[:, [0, 2]]-self.low)/step).astype(int)
+        shape = idx.max(0)+2
+        grid = np.zeros((shape[0], shape[1]), np.int32); np.add.at(grid, (idx[:, 0], idx[:, 1]), 1)
+        self.sat = np.pad(grid.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+    def count(self, x0, z0, x1, z1):
+        if not self.ok: return 0
+        i0, k0 = np.clip(np.floor((np.array([x0, z0])-self.low)/self.step).astype(int), 0, np.array(self.sat.shape)-1)
+        i1, k1 = np.clip(np.floor((np.array([x1, z1])-self.low)/self.step).astype(int)+1, 0, np.array(self.sat.shape)-1)
+        s = self.sat
+        return int(s[i1, k1]-s[i0, k1]-s[i1, k0]+s[i0, k0])
+
+
+def build(scene, settings=None, points=None):
     """scene → 도면 모델(dict, 미터·장면 좌표 x/z). 공간이 없으면 None."""
     S = {**SETTINGS, **(settings or {})}
     spaces, portals = _spaces(scene)
@@ -141,6 +161,14 @@ def build(scene, settings=None):
     for i in order:
         m = np.zeros(shape, np.uint8); cv2.fillPoly(m, [G(polys[i])], 1)
         labels[(m > 0) & (labels == 0)] = i+1
+    if S["smooth_m"] > 0:  # 방마다 작은 들쭉날쭉(계단 모양 윤곽)을 닫힘·열림으로 다듬는다
+        k = cv2.getStructuringElement(cv2.MORPH_RECT, (max(3, int(round(S["smooth_m"]/cell)) | 1),)*2)
+        smooth = np.zeros_like(labels)
+        for i in order:
+            m = (labels == i+1).astype(np.uint8)
+            m = cv2.morphologyEx(cv2.morphologyEx(m, cv2.MORPH_CLOSE, k), cv2.MORPH_OPEN, k)
+            smooth[(m > 0) & (smooth == 0)] = i+1
+        labels = smooth
     filled = labels
     if S["fill_gap_m"] > 0:
         gap = max(1, int(round(S["fill_gap_m"]/cell)))
@@ -220,6 +248,7 @@ def build(scene, settings=None):
         for i in range(nx):
             a, b = P[j, i+1], P[j+1, i+1]
             if a != b: edges.append(("z", zs[j], xs[i], xs[i+1], a, b, O[j, i+1], O[j+1, i+1]))
+    support = _WallSupport(points, float((scene.get("room") or {}).get("height") or 2.4)) if points is not None else None
     segs = []
     for axis, line, t0, t1, a, b, oa, ob in edges:
         if a > 0 and b > 0: kind, side, th = "touch", 0., S["touch_m"]
@@ -228,13 +257,22 @@ def build(scene, settings=None):
             kind, side = ("exterior" if outer else "unobserved"), (-1. if a == 0 else 1.)
             th = S["exterior_m"] if outer else S["interior_m"]
         else: continue  # 방-벽칸 경계는 벽칸 자체가 벽
+        is_open = False
+        if support is not None and support.ok and kind != "touch":  # 벽 점이 거의 없는 바깥 경계 = 관측 끝(벽 근거 없음)
+            w = S["support_window_m"]
+            box = (line-w, t0-w, line+w, t1+w) if axis == "x" else (t0-w, line-w, t1+w, line+w)
+            is_open = support.count(*box)/max(t1-t0, 1e-6) < S["support_min_per_m"]
         pair = (int(min(a, b)), int(max(a, b)))
         last = segs[-1] if segs else None
-        if last and last["axis"] == axis and last["at"] == line and last["pair"] == pair and last["side"] == side and abs(last["t1"]-t0) < 1e-9:
+        if last and last["axis"] == axis and last["at"] == line and last["pair"] == pair and last["side"] == side                 and last["open"] == is_open and abs(last["t1"]-t0) < 1e-9:
             last["t1"] = t1
         else:
-            segs.append({"axis": axis, "at": line, "t0": t0, "t1": t1, "kind": kind, "side": side, "th": th, "pair": pair})
+            segs.append({"axis": axis, "at": line, "t0": t0, "t1": t1, "kind": kind, "side": side, "th": th, "pair": pair, "open": is_open})
+    open_edges = []
     for s in segs:
+        if s["open"]:  # 벽을 세우지 않고 관측 경계선으로만 남긴다
+            open_edges.append([s["at"], s["t0"], s["at"], s["t1"]] if s["axis"] == "x" else [s["t0"], s["at"], s["t1"], s["at"]])
+            s["across"] = (s["at"], s["at"]); continue
         if s["kind"] == "touch": c0, c1 = s["at"]-s["th"]/2, s["at"]+s["th"]/2
         elif s["side"] > 0: c0, c1 = s["at"], s["at"]+s["th"]
         else: c0, c1 = s["at"]-s["th"], s["at"]
@@ -253,7 +291,10 @@ def build(scene, settings=None):
             outer = O[j+oj, i+oi]
             th = S["exterior_m"] if outer else S["interior_m"]
             x0 = xs[i]-th if oi == 0 else xs[i]; z0 = zs[j]-th if oj == 0 else zs[j]
-            rects.append([x0, z0, x0+th, z0+th, "exterior" if outer else "interior"])
+            corner = [x0, z0, x0+th, z0+th]
+            touches = any(r[0] <= corner[2]+1e-6 and r[2] >= corner[0]-1e-6 and r[1] <= corner[3]+1e-6 and r[3] >= corner[1]-1e-6
+                          for r in rects if r[4] != "corner")
+            if touches: rects.append(corner+["corner"])  # 벽 근거 없는 두 경계 사이 모서리는 세우지 않음
 
     # 6) 문: 두 공간 사이(맞닿은 경계 또는 벽 칸 띠)에 개구부
     by_label = {r["label"]: r for r in rooms}
@@ -318,7 +359,7 @@ def build(scene, settings=None):
             if split and max(w_, h_) < S["jamb_min_m"]:  # 문 옆에 남은 손톱만 한 벽 조각(문틀 잡티)
                 patches.append([round(float(v), 4) for v in q]); continue
             if w_ > 1e-3 and h_ > 1e-3:
-                walls.append({"rect_xz": [round(float(v), 4) for v in q], "exterior": kind == "exterior"})
+                walls.append({"rect_xz": [round(float(v), 4) for v in q], "exterior": kind in ("exterior", "corner")})
 
     # 7) 실내 바닥(벽면 안쪽): 방 칸 다각형에서 겹치는 벽을 뺀 영역. 면적·평가·도면 바닥에 쓴다.
     fine = .025
@@ -357,6 +398,7 @@ def build(scene, settings=None):
     ext = [w["rect_xz"] for w in walls if w["exterior"]] or [w["rect_xz"] for w in walls]
     for r in rooms: del r["label"]
     return {"version": VERSION, "method": "shared_wall_lines", "rooms": rooms, "walls": walls, "doors": doors, "floor_patches": patches,
+            "open_edges": [[round(float(v), 4) for v in e] for e in open_edges],
             "unobserved": unobserved, "lines": {"x": [round(v, 4) for v in xs], "z": [round(v, 4) for v in zs]},
             "bounds_xz": ([min(q[0] for q in ext), min(q[1] for q in ext), max(q[2] for q in ext), max(q[3] for q in ext)] if ext else None),
             "settings": S, "skipped_portals": len(portals)-len(doors)}

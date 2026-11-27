@@ -148,6 +148,11 @@ function planModel(THREE, plan, height) {
   for (const r of plan.rooms) floorMesh(r.interior_polygon_xz,PLAN_FLOOR[r.usage]??0xdccfbb,.004);
   for (const [x0,z0,x1,z1] of plan.floor_patches??[]) floorMesh([[x0,z0],[x1,z0],[x1,z1],[x0,z1]],0xd2bc98,.003);
   for (const u of plan.unobserved??[]) floorMesh(u,0xb9bcc0,.003);
+  const open=(plan.open_edges??[]).flatMap(([x0,z0,x1,z1])=>[x0,.02,z0,x1,.02,z1]);  // 벽 근거 없는 관측 경계
+  if (open.length) {
+    const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(open,3));
+    const line=new THREE.LineSegments(g,new THREE.LineDashedMaterial({color:0x7d8287,dashSize:.15,gapSize:.1})); line.computeLineDistances(); group.add(line);
+  }
   return group;
 }
 

@@ -65,7 +65,7 @@ def build_plan(scene):
     model = scene.get("floorplan") if (scene.get("floorplan") or {}).get("version") else None
     model = model or build(scene)
     if not model or not model["rooms"]:
-        return {"rooms": [], "walls": [], "doors": [], "patches": [], "unobserved": [], "objects": [], "extent": [[0, 0], [1, 1]]}
+        return {"rooms": [], "walls": [], "doors": [], "patches": [], "open_edges": [], "unobserved": [], "objects": [], "extent": [[0, 0], [1, 1]]}
     rooms = []
     for r in model["rooms"]:
         rooms.append({"id": r["id"], "outline": r["interior_polygon_xz"], "area_m2": r["area_m2"], "usage": r["usage"],
@@ -84,7 +84,7 @@ def build_plan(scene):
         # 상자를 맞추지 못한 사물은 크기·방향을 모르므로 아이콘을 그리지 않는다(고정 크기 아이콘은 오해를 부름)
     pts = np.array([q for w in model["walls"] for q in (w["rect_xz"][:2], w["rect_xz"][2:])] +
                    [q for r in rooms for q in r["outline"]], float)
-    return {"rooms": rooms, "walls": [w["rect_xz"] for w in model["walls"]], "doors": model["doors"], "patches": model.get("floor_patches", []),
+    return {"rooms": rooms, "walls": [w["rect_xz"] for w in model["walls"]], "doors": model["doors"], "patches": model.get("floor_patches", []), "open_edges": model.get("open_edges", []),
             "unobserved": model["unobserved"], "objects": objects, "extent": [pts.min(0).tolist(), pts.max(0).tolist()],
             "model": model}
 
@@ -137,6 +137,8 @@ def render(scene, out_dir: Path, title=None):
         prims.append(("poly", [P(x, z) for x, z in u], "hatch"))
     for o in plan["objects"]:
         prims.append(("furniture", o["class"], P(o["x"], o["z"]), (o["w"]*s, o["d"]*s), o["angle"]))
+    for x0, z0, x1, z1 in plan["open_edges"]:  # 벽 근거 없는 관측 경계: 점선
+        prims.append(("dash", P(x0, z0), P(x1, z1)))
     # 벽 사각형을 한 경로로 그려(같은 방향 부분 경로의 합집합) 사각형 사이 이음선이 생기지 않게 한다
     prims.append(("walls", [[P(x0, z0), P(x1, z0), P(x1, z1), P(x0, z1)] for x0, z0, x1, z1 in plan["walls"]]))
     for d in plan["doors"]:
@@ -198,6 +200,8 @@ def render(scene, out_dir: Path, title=None):
     prims.append(("text", 60, 62, f"{heading} 평면도", 28, True, COLORS["text"], "start"))
     prims.append(("text", 60, 98, f"관측 실내 면적 합계 {total:.1f}㎡ ({total/PYEONG:.1f}평) · 공간 {len(plan['rooms'])}개 · 문 {len(plan['doors'])}개", 16, False, COLORS["sub"], "start"))
     prims.append(("text", 60, H-58, f"사진으로 추정한 도면입니다. 치수(mm)·면적은 관측 영역 기준이며 실측과 다를 수 있습니다. {scale_note}.", 14, False, COLORS["sub"], "start"))
+    if plan["open_edges"]:
+        prims.append(("text", 60, H-82, "회색 점선: 벽 근거(3D 점)가 없는 관측 경계예요. 실제 벽·창·개방 공간인지 확인이 필요해요.", 14, False, COLORS["sub"], "start"))
     prims.append(("text", 60, H-34, "실 이름의 '추정'은 사진 속 사물(변기·침대·소파·주방 가전) 또는 공간 크기·모양·연결 학습 모델 근거입니다. 확정이 아닙니다.", 14, False, COLORS["sub"], "start"))
     out_dir = Path(out_dir)
     svg = _svg(prims, W, H)
@@ -245,6 +249,8 @@ def _svg(prims, W, H):
         elif p[0] == "wall":
             d = "".join("M"+"L".join(f"{x:.1f} {y:.1f}" for x, y in ring)+"Z" for ring in [p[1]]+p[2])
             body.append(f'<path d="{d}" fill="{COLORS["wall"]}" fill-rule="evenodd"/>')
+        elif p[0] == "dash":
+            body.append(f'<line x1="{p[1][0]:.1f}" y1="{p[1][1]:.1f}" x2="{p[2][0]:.1f}" y2="{p[2][1]:.1f}" stroke="#8d8d8d" stroke-width="2.2" stroke-dasharray="7 5"/>')
         elif p[0] == "walls":
             d = "".join("M"+"L".join(f"{x:.2f} {y:.2f}" for x, y in ring)+"Z" for ring in p[1])
             body.append(f'<path d="{d}" fill="{COLORS["wall"]}" fill-rule="nonzero"/>')
@@ -308,6 +314,11 @@ def _png(prims, W, H, path):
             md.polygon(S(p[1]), fill=255)
             for hole in p[2]: md.polygon(S(hole), fill=0)
             img.paste(Image.new("RGB", img.size, COLORS["wall"]), (0, 0), mask)
+        elif p[0] == "dash":
+            (ax, ay), (bx, by) = p[1], p[2]; L = math.hypot(bx-ax, by-ay); n = max(1, int(L/12))
+            for i in range(n):
+                u0, u1 = i/n, min(1, (i+7/12)/n)
+                draw.line([((ax+(bx-ax)*u0)*k, (ay+(by-ay)*u0)*k), ((ax+(bx-ax)*u1)*k, (ay+(by-ay)*u1)*k)], fill="#8d8d8d", width=int(2.2*k))
         elif p[0] == "walls":
             mask = Image.new("L", img.size, 0); md = ImageDraw.Draw(mask)
             for ring in p[1]: md.polygon(S(ring), fill=255)
