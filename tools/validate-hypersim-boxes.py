@@ -12,6 +12,9 @@ from hypersim_gt import MATCH, load
 from spacecapture.pipeline import umeyama
 
 
+CORE = {"bed", "sofa", "chair", "table", "desk", "television", "refrigerator", "toilet"}
+
+
 def gt_box(o):
     axes = o["R"]  # 열 = 상자 축(정답 좌표)
     k = int(np.argmax(np.abs(axes[2, :])))          # z(위)에 가장 가까운 축 = 높이
@@ -54,14 +57,17 @@ def evaluate(scene_name, gt_dir, do_refit=False):
         ours.append({"class": o["class"], "xy": c[:2], "w": b["size"][0]/s, "d": b["size"][2]/s, "h": b["size"][1]/s,
                      "top": to_gt([b["center"][0], b["bottom"]+b["size"][1], b["center"][2]])[2],
                      "yaw": np.degrees(np.arctan2(x_axis[1], x_axis[0])) % 180, "reliable": b["reliable"], "display": b.get("display", b["reliable"]),
-                     "views": b["views"], "rejected": b.get("rejected")})
+                     "views": b["views"], "rejected": b.get("rejected"), "source": o.get("source", "sfm_points"),
+                     "edge_error": b.get("edge_error"), "inside_points": b.get("inside_points")})
     gts = [dict(gt_box(o), cls=o["class"], instance=o["instance"], pixels=o["pixels"]) for o in objects]
     rows, used = [], set()
     # 표시한 상자를 먼저 대응시킨다(표시 안 한 상자가 정답을 가로채지 않게)
     for q in sorted(ours, key=lambda q: (not q["display"], -q["views"])):
         cand = [(np.linalg.norm(q["xy"]-g["xy"]), k) for k, g in enumerate(gts) if g["cls"] in MATCH[q["class"]] and k not in used]
         cand = [c for c in cand if c[0] <= 1.0]
-        row = {"class": q["class"], "reliable": q["reliable"], "display": q["display"], "rejected": q["rejected"], "views": q["views"]}
+        row = {"class": q["class"], "reliable": q["reliable"], "display": q["display"], "rejected": q["rejected"], "views": q["views"],
+               "source": q["source"], "edge_error": q["edge_error"], "inside_points": q["inside_points"],
+               "nearest_gt": min(((round(float(np.linalg.norm(q["xy"]-g["xy"])), 2), g["cls"]) for g in gts), default=None)}
         if cand:
             e, k = min(cand); used.add(k); g = gts[k]
             dyaw = abs((q["yaw"]-g["yaw"]+90) % 180-90)
@@ -74,7 +80,47 @@ def evaluate(scene_name, gt_dir, do_refit=False):
             "scale_vs_truth": round(1/float(s), 4), "floor_offset_cm": round(float(floor_gt-min(g["top"]-g["h"] for g in gts))*100, 1) if gts else None,
             "gt_furniture": sum(1 for g in gts if any(g["cls"] in v for v in MATCH.values())),
             # 재현율 분모: 대응 종류이면서 분할 영상에서 충분히 보인(2만 화소 이상, 라벨 프레임 합) 정답 가구
-            "gt_visible": sum(1 for g in gts if any(g["cls"] in v for v in MATCH.values()) and g["pixels"] >= 20000), "rows": rows}
+            "gt_visible": sum(1 for g in gts if any(g["cls"] in v for v in MATCH.values()) and g["pixels"] >= 20000),
+            # 핵심 가구만(기타 가구·수납장 제외): 침대·소파·의자·탁자·책상·TV·냉장고·변기
+            "gt_visible_core": sum(1 for g in gts if g["cls"] in CORE and g["pixels"] >= 20000),
+            "matched_core": sum(1 for x in rows if x.get("display") and x.get("matched") in CORE), "rows": rows}
+
+
+def apply_settings(pairs):
+    import spacecapture.object_boxes as ob
+    for kv in pairs:
+        k, v = kv.split("=")
+        ob.SETTINGS[k] = v if k == "floor_mode" else bool(float(v)) if k == "floor_ray" else float(v)
+
+
+def _job(task):
+    name, refit_, pairs = task
+    apply_settings(pairs)
+    return evaluate(f"hs-{name}", ROOT/"samples/external/hypersim"/name, refit_)
+
+
+def standard_size(row):
+    """정답 상자가 해당 종류의 일반 크기 범위(±15%) 안인지(라운지 의자·머리판 포함 침대 등 정의 차이 제외)."""
+    from spacecapture.object_boxes import PRIORS
+    _, (lo, hi), _ = PRIORS[row["class"]]
+    return all(lo[i]*.85 <= s <= hi[i]*1.15 for i, s in enumerate(row["gt_size"]))
+
+
+def summarize(out):
+    shown = [x for r in out for x in r["rows"] if x["display"] and "matched" in x]
+    std = [x for x in shown if standard_size(x)]
+    allfit = [x for r in out for x in r["rows"] if "matched" in x]
+    med = lambda rows, k: round(float(np.median([abs(x[k]) for x in rows if x.get(k) is not None])), 1) if any(x.get(k) is not None for x in rows) else None
+    displayed = sum(1 for r in out for x in r["rows"] if x["display"]); visible = sum(r["gt_visible"] for r in out)
+    return {"scenes": len(out), "boxes": sum(len(r["rows"]) for r in out), "displayed": displayed,
+            "precision": round(len(shown)/max(1, displayed), 3), "recall_visible": round(len(shown)/max(1, visible), 3), "gt_visible": visible,
+            "recall_core": round(sum(r["matched_core"] for r in out)/max(1, sum(r["gt_visible_core"] for r in out)), 3),
+            "gt_visible_core": sum(r["gt_visible_core"] for r in out),
+            "displayed_matched": len(shown), "displayed_unmatched": sum(1 for r in out for x in r["rows"] if x["display"] and "matched" not in x),
+            **{f"displayed_median_abs_{k}": med(shown, k) for k in ("center_cm", "width_cm", "depth_cm", "height_cm", "top_cm", "yaw_err_deg")},
+            "standard_size_matched": len(std),
+            **{f"standard_median_abs_{k}": med(std, k) for k in ("center_cm", "width_cm", "depth_cm", "height_cm", "top_cm", "yaw_err_deg")},
+            **{f"all_median_abs_{k}": med(allfit, k) for k in ("width_cm", "depth_cm", "height_cm", "yaw_err_deg")}}
 
 
 if __name__ == "__main__":
@@ -82,13 +128,17 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("scenes", nargs="+"); ap.add_argument("--refit", action="store_true")
     ap.add_argument("--set", action="append", default=[], help="object_boxes.SETTINGS 키=값")
     ap.add_argument("--max-camera-rmse-cm", type=float, default=10.); ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--out", default=str(ROOT/"artifacts/hypersim/boxes.json")); ap.add_argument("--jobs", type=int, default=1)
     args = ap.parse_args()
-    import spacecapture.object_boxes as ob
-    for kv in args.set:
-        k, v = kv.split("="); ob.SETTINGS[k] = v if k == "floor_mode" else float(v)
+    apply_settings(args.set)
+    tasks = [(n, args.refit, args.set) for n in args.scenes]
+    if args.jobs > 1:
+        from multiprocessing import Pool
+        with Pool(args.jobs) as pool: results = pool.map(_job, tasks)
+    else:
+        results = [_job(x) for x in tasks]
     out = []
-    for name in args.scenes:
-        r = evaluate(f"hs-{name}", ROOT/"samples/external/hypersim"/name, args.refit)
+    for name, r in zip(args.scenes, results):
         if r["camera_rmse_cm"] > args.max_camera_rmse_cm:  # 복원 자체가 틀린 장면은 상자 평가에서 뺀다
             print(name, "제외: 카메라 정렬 오차", r["camera_rmse_cm"], "cm"); continue
         out.append(r)
@@ -96,15 +146,7 @@ if __name__ == "__main__":
         print(name, {k: v for k, v in r.items() if k != "rows"})
         for row in r["rows"]:
             if "matched" in row: print("   ", row)
-    shown = [x for r in out for x in r["rows"] if x["display"] and "matched" in x]
-    allfit = [x for r in out for x in r["rows"] if "matched" in x]
-    med = lambda rows, k: round(float(np.median([abs(x[k]) for x in rows if x.get(k) is not None])), 1) if any(x.get(k) is not None for x in rows) else None
-    displayed = sum(1 for r in out for x in r["rows"] if x["display"]); visible = sum(r["gt_visible"] for r in out)
-    summary = {"scenes": len(out), "boxes": sum(len(r["rows"]) for r in out), "displayed": displayed,
-               "precision": round(len(shown)/max(1, displayed), 3), "recall_visible": round(len(shown)/max(1, visible), 3), "gt_visible": visible,
-               "displayed_matched": len(shown), "displayed_unmatched": sum(1 for r in out for x in r["rows"] if x["display"] and "matched" not in x),
-               **{f"displayed_median_abs_{k}": med(shown, k) for k in ("center_cm", "width_cm", "depth_cm", "height_cm", "top_cm", "yaw_err_deg")},
-               **{f"all_median_abs_{k}": med(allfit, k) for k in ("width_cm", "depth_cm", "height_cm", "yaw_err_deg")}}
+    summary = summarize(out)
     print(json.dumps(summary, ensure_ascii=False))
     (ROOT/"artifacts/hypersim").mkdir(parents=True, exist_ok=True)
-    (ROOT/"artifacts/hypersim/boxes.json").write_text(json.dumps({"summary": summary, "scenes": out}, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
+    Path(args.out).write_text(json.dumps({"summary": summary, "scenes": out}, ensure_ascii=False, indent=1, default=float), encoding="utf-8")

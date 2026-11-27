@@ -43,9 +43,13 @@ MIN_FOOT_POINTS = 20
 # 장면 바닥 추정이 틀리면(층이 나뉜 집·창밖 지면) 고정 접지가 상자 높이를 크게 늘린다.
 SETTINGS = {"floor_mode": "fixed", "floor_sigma_m": .15, "floor_weight": .002,
             "reassociate": 1,          # 맞춘 상자 중심으로 사진별 검출을 다시 대응시켜 한 번 더 맞춤
-            "min_reliable_views": 8,   # 믿을 만한 상자의 최소 사진 수(Hypersim 개발 장면 8곳에서 6/8/10 중 선택)
-            "dup_overlap": .5,
-            "outside_weight": 1.}      # <1이면 투영이 검출 밖으로 나가는 것을 덜 벌함(가림 대응)         # 같은 계열 가구끼리 작은 쪽 바닥면의 이 비율 이상 겹치면 중복
+            "min_reliable_views": 6,   # 믿을 만한 상자의 최소 사진 수(Hypersim 개발 장면에서 선택: 점·중심 중복 규칙과 함께 6)
+            "dup_overlap": .5,         # 같은 계열 가구끼리 작은 쪽 바닥면의 이 비율 이상 겹치면 중복
+            "outside_weight": 1.,      # <1이면 투영이 검출 밖으로 나가는 것을 덜 벌함(가림 대응)
+            "floor_ray": False, "ray_min_score": .35, "ray_radius_frac": .5,
+            "min_inside_points": 1,    # 상자 안 SfM 점이 이보다 적으면 믿지 않음(허상 TV 등 점 0개)
+            "ray_min_inside_points": 10,
+            "dup_center_frac": .5}     # 같은 계열 두 상자 중심 거리가 (큰 쪽 가로 × 이 값)보다 가까우면 중복  # 바닥 광선 후보(바닥 오인 시 허상)는 상자 안 점 10개 이상  # 바닥 광선 후보(SfM 점 없이 사물 찾기)
 # 같은 가구가 다른 종류로도 잡힌다(소파 → 소파+의자). 계열 안에서 중복을 합친다.
 FAMILY = {"couch": "seat", "chair": "seat", "bench": "seat", "toilet": "seat", "dining table": "table"}
 
@@ -217,9 +221,70 @@ def floor_visible(box, points):
     return (float((foot & (P[:, 1] < box["bottom"]+.06)).sum())/n if n else None), n
 
 
+def floor_ray_candidates(detections_by_photo, cams, labels, min_views=3, max_range=12.):
+    """바닥 가구 후보를 SfM 점 없이 만든다: 검출 상자 아래 변 가운데를 지나는 광선과 바닥(y=0)의 교점을
+    여러 사진에서 모아 같은 종류끼리 묶는다. 가구 표면에 SfM 점이 적어 기존 위치 추정이 실패해도 후보가 생긴다.
+    아래 변이 화면에 잘린 검출은 쓰지 않는다. 반환 형식은 objects.fuse_instances와 같다."""
+    hits = {}
+    for name, dets in detections_by_photo.items():
+        if name not in cams: continue
+        C, R, (iw, ih, f) = cams[name]
+        for d in dets:
+            cls = labels.get(d.get("class") or d.get("label"))
+            if cls not in PRIORS or not PRIORS[cls][2]: continue
+            x0, y0, x1, y1 = d["box"]
+            if y1 >= ih-EDGE_PX or d.get("score", 1) < SETTINGS["ray_min_score"]: continue
+            ray = R.T@np.array([((x0+x1)/2-iw/2)/f, (y1-ih/2)/f, 1.])
+            if ray[1] > -1e-3: continue                       # 바닥을 향하지 않음
+            s = -C[1]/ray[1]
+            if s <= 0 or s*np.linalg.norm(ray) > max_range: continue
+            P = C+s*ray
+            hdir = np.array([ray[0], ray[2]]); hdir /= max(np.linalg.norm(hdir), 1e-9)
+            xz = P[[0, 2]]+hdir*PRIORS[cls][0][1]/2         # 아래 변은 앞면 → 깊이 절반만큼 안쪽이 중심
+            hits.setdefault(cls, []).append((xz, name, float(d.get("score", 1))))
+    out = []
+    for cls, items in hits.items():
+        radius = max(.3, SETTINGS["ray_radius_frac"]*PRIORS[cls][0][0])
+        clusters = []
+        for xz, name, score in sorted(items, key=lambda q: -q[2]):
+            best = None
+            for c in clusters:
+                dist = np.linalg.norm(np.median(c["xz"], 0)-xz)
+                if dist < radius and name not in c["photos"] and (best is None or dist < best[0]): best = (dist, c)
+            if best: best[1]["xz"].append(xz); best[1]["photos"].add(name); best[1]["scores"].append(score)
+            else: clusters.append({"xz": [xz], "photos": {name}, "scores": [score]})
+        for c in clusters:
+            if len(c["photos"]) < min_views: continue
+            xz = np.median(c["xz"], 0)
+            out.append({"class": cls, "label": cls, "position": [round(float(xz[0]), 3), round(PRIORS[cls][0][2]/2, 3), round(float(xz[1]), 3)],
+                        "view_count": len(c["photos"]), "max_score": round(max(c["scores"]), 3), "photos": sorted(c["photos"])[:8],
+                        "source": "floor_ray"})
+    return out
+
+
+def inside_points(box, points, shrink=.9):
+    """상자 안(가로·깊이 90%, 높이 10~100%)에 있는 SfM 점 수. 표면에 점이 하나도 없는 상자는 근거가 약하다."""
+    P = np.asarray(points, float)
+    if not len(P): return 0
+    yaw = np.radians(box["yaw_deg"]); c, s = np.cos(yaw), np.sin(yaw)
+    Q = P-np.array(box["center"])
+    lx, lz = Q[:, 0]*c-Q[:, 2]*s, Q[:, 0]*s+Q[:, 2]*c
+    w, h, d = box["size"]
+    y = P[:, 1]-box["bottom"]
+    return int(((np.abs(lx) < w/2*shrink) & (np.abs(lz) < d/2*shrink) & (y > .1*h) & (y < h*1.05)).sum())
+
+
 def fit_boxes(instances, detections_by_photo, cams, labels, points=None, walls=None):
-    """사물 목록에 `box3d`를 붙인다(제자리 수정). 반환: 맞춘 개수, 믿을 만한 개수."""
+    """사물 목록에 `box3d`를 붙인다(제자리 수정). 반환: 맞춘 개수, 믿을 만한 개수.
+    SETTINGS["floor_ray"]이면 바닥 광선 후보(floor_ray_candidates) 중 기존 사물과 떨어진 것을 목록에 더한다."""
     fitted = reliable = 0
+    if SETTINGS["floor_ray"]:
+        from .objects import KOREAN
+        for cand in floor_ray_candidates(detections_by_photo, cams, labels):
+            near = [i for i in instances if i["class"] == cand["class"]
+                    and np.hypot(i["position"][0]-cand["position"][0], i["position"][2]-cand["position"][2]) < max(.4, .5*PRIORS[cand["class"]][0][0])]
+            if not near:
+                cand["label"] = KOREAN.get(cand["class"], cand["class"]); instances.append(cand)
     for inst in instances:
         views = associate(inst, detections_by_photo, cams, labels)
         box = fit_box(inst, views)
@@ -233,6 +298,11 @@ def fit_boxes(instances, detections_by_photo, cams, labels, points=None, walls=N
             inst.pop("box3d", None); continue
         if box["views"] < SETTINGS["min_reliable_views"]:
             box["reliable"] = False; box["rejected"] = "few_views"
+        if points is not None:
+            box["inside_points"] = inside_points(box, points)
+            need = SETTINGS["ray_min_inside_points"] if inst.get("source") == "floor_ray" else SETTINGS["min_inside_points"]
+            if box["inside_points"] < need:  # 바닥 광선 후보는 SfM 점 근거가 없으므로 상자 안 점을 따로 요구
+                box["reliable"] = False; box["rejected"] = "no_points_inside"
         if points is not None and inst["class"] in SOLID and PRIORS[inst["class"]][2]:
             frac, n = floor_visible(box, points)
             box["floor_visible"] = None if frac is None else round(frac, 3)
@@ -246,7 +316,9 @@ def fit_boxes(instances, detections_by_photo, cams, labels, points=None, walls=N
     for k, a in enumerate(boxed):
         for b in boxed[:k]:
             same = b["class"] == a["class"] or (FAMILY.get(a["class"]) and FAMILY.get(a["class"]) == FAMILY.get(b["class"]))
-            if b["box3d"]["reliable"] and same and footprint_overlap(a["box3d"], b["box3d"]) > SETTINGS["dup_overlap"]:
+            ca, cb = np.array(a["box3d"]["center"])[[0, 2]], np.array(b["box3d"]["center"])[[0, 2]]
+            close = np.linalg.norm(ca-cb) < SETTINGS["dup_center_frac"]*max(a["box3d"]["size"][0], b["box3d"]["size"][0])
+            if b["box3d"]["reliable"] and same and (close or footprint_overlap(a["box3d"], b["box3d"]) > SETTINGS["dup_overlap"]):
                 a["box3d"]["reliable"] = False; a["box3d"]["rejected"] = "duplicate"; break
     reliable = sum(1 for i in instances if i.get("box3d", {}).get("reliable"))
     return fitted, reliable

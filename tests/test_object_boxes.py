@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from spacecapture.object_boxes import corners, facing, fit_box, fit_boxes, floor_visible, footprint_iou, mark_display, project_box
+from spacecapture.object_boxes import corners, floor_ray_candidates, facing, fit_box, fit_boxes, floor_visible, footprint_iou, mark_display, project_box
 
 
 def look_at(C, target):
@@ -78,6 +78,19 @@ class ObjectBoxTests(unittest.TestCase):
         spaces[0]["usage_candidates"] = [{"usage": "kitchen"}]
         mark_display(inst, spaces)
         self.assertTrue(inst[0]["box3d"]["display"])
+
+    def test_floor_ray_candidates_find_object_without_sfm_points(self):
+        P = corners((0., 0.), (1.9, .9, .85), 0.)          # 소파
+        dets, cams = {}, {}
+        for k, C in enumerate(RING):
+            C = np.asarray(C, float)
+            cam = (C, look_at(C, [0., .4, 0.]), (1280, 720, 1000.))
+            cams[f"p{k}"] = cam
+            dets[f"p{k}"] = [{"class": "couch", "score": .9, "box": project_box(P, cam).tolist()}]
+        cands = floor_ray_candidates(dets, cams, {"couch": "couch"})
+        self.assertEqual(len(cands), 1)
+        self.assertGreaterEqual(cands[0]["view_count"], 3)   # 아래 변이 화면 밖인 사진은 제외
+        self.assertLess(np.hypot(cands[0]["position"][0], cands[0]["position"][2]), .45)
 
 
 if __name__ == "__main__":
