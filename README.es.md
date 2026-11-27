@@ -25,6 +25,7 @@ Igual que un coche construye una imagen 3D de su entorno con sus cámaras, space
 - **3D fotorrealista**: Gaussian Splatting con Brush, que funciona en GPU AMD e Intel mediante WebGPU.
 - **Plano 2D al estilo inmobiliario coreano** (`plan.png` / `plan.svg`): paredes negras, suelos de madera y baldosa, apertura de puertas, cotas en mm, ㎡ y pyeong (평).
 - **3D más limpio**: detección de características de bajo contraste para paredes blancas lisas en vídeo y eliminación automática de splats flotantes fuera de la vivienda.
+- **Vista de reconstrucción IA**: redibuja la vivienda como un modelo limpio al estilo de Tesla (muros, suelos por estancia, huecos de puerta, muebles con sombras), con un control para mezclar la captura 3D fotorrealista y una reproducción que recorre la trayectoria de captura.
 - **Tamaño y orientación de muebles**: a cada mueble detectado se le ajusta una caja 3D (ancho, fondo, alto, orientación) que coincide con su recuadro de detección en todas las fotos, y se redibuja como un modelo limpio (cama, sofá, silla, mesa, TV, frigorífico…) en la vista estructural 3D y a tamaño real en el plano 2D, como la pantalla de conducción de un coche. Se descartan suelos confundidos con camas (suelo visible dentro de la huella) y se fusionan duplicados. Oficina real TUM: altura superior con error mediano de 9,1 cm frente a la cámara de profundidad. Viviendas amuebladas fotorrealistas (Apple Hypersim, 15 escenas no usadas para ajustar, cajas 3D de referencia): muebles de tamaño estándar con error mediano de 11 cm en ancho/fondo, 7 cm en altura y 3° en orientación; precisión 0,53, exhaustividad 0,37.
 - **Modelo de muros limpio**: todas las estancias se ajustan a líneas de muro compartidas; los huecos estrechos entre estancias pasan a ser muros con su grosor medido, los muros exteriores quedan fuera de las estancias y las puertas se abren en los muros. El plano 2D (muros sólidos, apertura de puertas, superficies netas) y la casa de muñecas 3D (muros cortados a 1,1 m) usan el mismo modelo sin perder precisión (IoU de prueba LH 0,833 → 0,828; vídeos 0,698 → 0,703).
 - **Modelo estructural**: una "casa de muñecas" limpia con paredes y huecos de puerta reconstruidos a partir de los espacios detectados, con nombres y superficies.
@@ -33,7 +34,7 @@ Igual que un coche construye una imagen 3D de su entorno con sus cámaras, space
 <table>
 <tr>
 <td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="2D plan"><br><sub>Plano 2D generado (espacios, puertas, superficies y nombres de estancia estimados)</sub></td>
-<td width="50%"><img src="docs/images/structure-model.jpg" alt="structure model"><br><sub>Modelo estructural: paredes levantadas a partir de los espacios detectados, huecos de puerta y suelos coloreados por tipo de estancia</sub></td>
+<td width="50%"><img src="docs/images/ai-view.jpg" alt="structure model"><br><sub>Modelo estructural: paredes levantadas a partir de los espacios detectados, huecos de puerta y suelos coloreados por tipo de estancia</sub></td>
 </tr>
 <tr>
 <td><img src="docs/images/inside-view.jpg" alt="inside view"><br><sub>Vista interior de la vivienda en Gaussian splatting (papel pintado, cuadros, enchufes, suelo de madera)</sub></td>

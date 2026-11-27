@@ -25,6 +25,7 @@ Like a car that builds a 3D picture of its surroundings from its cameras, spaceC
 - **Photorealistic 3D** with Gaussian splatting (Brush, runs on AMD/Intel GPUs via WebGPU).
 - **Korean real-estate style 2D plan** (`plan.png` / `plan.svg`): black walls, wood/tile floors, door swings, mm dimension chains, ㎡ and 평.
 - **Cleaner 3D**: low-contrast feature detection for plain white walls in videos, and automatic removal of floating splats outside the home.
+- **AI reconstruction view**: a Tesla-style clean redraw of the home (walls, room floors, door openings, furniture models with shadows), a slider that blends in the photo-realistic 3D capture, and a replay that drives the camera along the capture path.
 - **Furniture size and direction**: each detected piece of furniture gets a 3D box (width, depth, height, direction) fitted so it matches the detection box in every photo, then is redrawn as a clean model (bed, sofa, chair, table, TV, fridge…) in the 3D structure view and at true size on the 2D plan, like a car's driving display. Floors misread as beds are rejected (visible floor inside the footprint), duplicates merged. TUM real office: top height within 9.1 cm (median) of the depth camera. Photo-realistic furnished homes (Apple Hypersim, 15 held-out scenes, ground-truth 3D boxes): standard-size furniture width/depth error 11 cm, height 7 cm, direction 3° (median); precision 0.53, recall 0.37.
 - **Clean wall model**: all rooms snap to shared wall lines; thin gaps between rooms become real walls with their measured thickness, exterior walls sit outside the rooms, doors are cut into the walls. The 2D plan (solid walls, door swings, net areas) and the 3D dollhouse (walls cut at 1.1 m) use the same model, with no loss of room accuracy (LH test IoU 0.833 → 0.828, walk-through videos 0.698 → 0.703).
 - **Structure model**: a clean "dollhouse" of walls and door openings rebuilt from the detected spaces, with room names and areas.
@@ -33,7 +34,7 @@ Like a car that builds a 3D picture of its surroundings from its cameras, spaceC
 <table>
 <tr>
 <td width="50%"><img src="docs/images/plan-korean-style.jpg" alt="2D plan"><br><sub>Generated 2D plan (spaces, doors, areas, estimated room names)</sub></td>
-<td width="50%"><img src="docs/images/structure-model.jpg" alt="structure model"><br><sub>Structure model: walls rebuilt from the detected spaces, door gaps, floors colored by room type</sub></td>
+<td width="50%"><img src="docs/images/ai-view.jpg" alt="structure model"><br><sub>Structure model: walls rebuilt from the detected spaces, door gaps, floors colored by room type</sub></td>
 </tr>
 <tr>
 <td><img src="docs/images/inside-view.jpg" alt="inside view"><br><sub>Inside view of the Gaussian-splat home (wallpaper, frames, outlets, wood floor)</sub></td>

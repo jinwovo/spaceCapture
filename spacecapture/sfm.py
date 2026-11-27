@@ -221,6 +221,42 @@ def drop_unsupported_photo_poses(rec: pycolmap.Reconstruction, log=print):
     return records
 
 
+# 3D 점을 함께 만든 카메라끼리만 '구조로 이어진' 것으로 본다(쌍별 공유 점 ≥ 이 값).
+# Hypersim 23곳: 1~10 사이에서 결과 동일, 5를 쓴다(2026-11-27).
+LINK_MIN_SHARED_POINTS = 5
+
+
+def drop_unlinked_groups(rec: pycolmap.Reconstruction, log=print, min_shared=None, db_path=None):
+    """가장 큰 묶음과 3D 점을 함께 만들지 못한 카메라 묶음을 제외한다(배치 근거 없음).
+
+    전역 SfM은 3D 점을 하나도 함께 만들지 못한 묶음도 시점 그래프만으로 배치한다. 반복 무늬 오매칭에 끌리면
+    묶음이 통째로 엉뚱한 곳에 놓인다. Hypersim 23곳·반복 실행(2026-11-27)에서 이런 묶음 8개(5~39장)는
+    모두 정답 대비 1m 이상 어긋났고(ai_015 전부, ai_008 한 실행의 39장 → 전체 RMSE 158.7cm),
+    제자리에 놓인 연결 없는 묶음은 한 번도 없었다. 정상 실행에서는 묶음이 생기지 않아 제외도 없다.
+    연결 매칭과 현재 배치의 일치 비율은 기록만 한다(잘못 놓인 묶음도 0.45가 나온 적이 있어 판정에 안 씀).
+    """
+    from .group_check import cross_link_consistency, shared_point_components
+    groups=shared_point_components(rec, LINK_MIN_SHARED_POINTS if min_shared is None else min_shared)
+    if len(groups)<2:
+        return []
+    main=groups[0]; drop=[]; records=[]
+    for g in groups[1:]:
+        try:
+            pairs,n,frac=cross_link_consistency(rec,db_path,g,main) if db_path else (0,0,None)
+        except Exception:  # noqa: BLE001 - 기록용 지표
+            pairs,n,frac=0,0,None
+        log(f"  3D 점으로 이어지지 않은 사진 묶음 {len(g)}장 제외(배치 근거 없음, 연결 매칭 {n}개·배치와 맞는 비율 "
+            f"{'-' if frac is None else f'{frac:.2f}'})")
+        for name in sorted(g):
+            records.append({"name":name,"group_size":len(g),"cross_pairs":pairs,"cross_matches":n,
+                            "consistent_fraction":None if frac is None else round(frac,3),"action":"excluded",
+                            "reason":"가장 큰 묶음과 3D 점을 함께 만들지 못한 묶음(시점 그래프만으로 배치, 위치 신뢰 불가)"})
+        drop+=sorted(g)
+    deregister_photos(rec,drop,log)
+    log(f"  가장 큰 묶음 {len(main)}장으로 계속")
+    return records
+
+
 FRAME_PREFIX = "frame_"
 # SIFT 추가 설정(실험·조정용). 비어 있으면 COLMAP 기본값.
 SIFT_OPTIONS: dict = {}
@@ -272,6 +308,8 @@ def run_sfm(
     focal_px: float | None = None,
     log=print,
     unordered: bool = False,
+    shared_camera: bool = False,
+    mapper: str = "global",
 ) -> pycolmap.Reconstruction:
     work_dir.mkdir(parents=True, exist_ok=True)
     db = work_dir / "database.db"
@@ -303,7 +341,7 @@ def run_sfm(
                                   camera_mode=pycolmap.CameraMode.PER_IMAGE,
                                   reader_options=reader, extraction_options=extraction, device=cpu)
     else:
-        camera_mode = pycolmap.CameraMode.PER_IMAGE if unordered else pycolmap.CameraMode.SINGLE
+        camera_mode = pycolmap.CameraMode.PER_IMAGE if unordered and not shared_camera else pycolmap.CameraMode.SINGLE
         pycolmap.extract_features(db, image_dir, camera_mode=camera_mode,
                                   reader_options=reader, extraction_options=extraction if unordered else video_extraction, device=cpu)
     log(f"  특징점 추출 완료 ({time.time() - t:.0f}초)")
@@ -333,13 +371,13 @@ def run_sfm(
 
     t = time.time()
     width, height = _image_size(db)
-    relative = unordered or mixed  # 사진마다 크기가 달라 긴 변 대비 비율로 사전값을 준다
+    relative = (unordered and not shared_camera) or mixed  # 사진마다 크기가 달라 긴 변 대비 비율로 사전값을 준다
     if relative:
         guesses = [focal_px / max(width, height)] if focal_px else list(FOCAL_FACTORS)
     else:
         guesses = [focal_px] if focal_px else [f * max(width, height) for f in FOCAL_FACTORS]
     best: pycolmap.Reconstruction | None = None
-    for gi, guess in enumerate(guesses):
+    for gi, guess in enumerate(guesses if mapper == "global" else []):
         prior = guess
         for it in range(4):  # feed the refined focal back as the prior until it settles
             out = work_dir / f"sparse_try{gi}_{it}"
@@ -378,8 +416,11 @@ def run_sfm(
             removed=drop_unsupported_photo_poses(best,log)
             excluded+=removed
             if not removed: break
-        (work_dir/"pose_filter.json").write_text(json.dumps({"method":"unordered_observation_support+focal_outlier",
-            "excluded":excluded,"ground_truth_used":False},ensure_ascii=False,indent=2),encoding="utf-8")
+        linked=drop_unlinked_groups(best,log,db_path=db)
+        excluded+=[r for r in linked if r["action"]=="excluded"]
+        (work_dir/"pose_filter.json").write_text(json.dumps({"method":"unordered_observation_support+focal_outlier+unlinked_group_check",
+            "excluded":excluded,
+            "ground_truth_used":False},ensure_ascii=False,indent=2),encoding="utf-8")
 
     final = work_dir / "sparse"
     shutil.rmtree(final, ignore_errors=True)
