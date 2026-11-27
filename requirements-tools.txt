@@ -2,3 +2,4 @@
 rapidocr==3.10.0      # Apache-2.0, PP-OCRv5 한국어 인식 모델(Apache-2.0)을 내려받아 사용
 onnxruntime==1.31.1   # MIT
 # 주의: rapidocr가 opencv-python-headless 5.0.0.93을 함께 설치한다. requirements.txt의 opencv-python과 같은 버전이어야 한다.
+h5py==3.16.0          # BSD-3-Clause, Hypersim 평가 자료(hdf5) 읽기 전용

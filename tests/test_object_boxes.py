@@ -25,7 +25,7 @@ def views_for(center, size, yaw, positions, noise=0., seed=0):
     return views
 
 
-RING = [[2.5*np.cos(a), 1.5, 2.5*np.sin(a)] for a in np.linspace(.3, 2.6, 6)]
+RING = [[2.5*np.cos(a), 1.5, 2.5*np.sin(a)] for a in np.linspace(.3, 2.6, 9)]
 
 
 class ObjectBoxTests(unittest.TestCase):

@@ -39,6 +39,15 @@ MAX_ERROR = .12     # 변 오차(검출 상자 대각선 대비) 중앙값 허�
 SOLID = {"bed", "couch", "refrigerator", "oven", "toilet"}
 MAX_FLOOR_VISIBLE = .3
 MIN_FOOT_POINTS = 20
+# 바닥 접지 가구의 밑면: "fixed"는 y=0 고정, "soft"는 밑면도 풀되 바닥(y=0) 쪽으로 당긴다(σ=floor_sigma_m).
+# 장면 바닥 추정이 틀리면(층이 나뉜 집·창밖 지면) 고정 접지가 상자 높이를 크게 늘린다.
+SETTINGS = {"floor_mode": "fixed", "floor_sigma_m": .15, "floor_weight": .002,
+            "reassociate": 1,          # 맞춘 상자 중심으로 사진별 검출을 다시 대응시켜 한 번 더 맞춤
+            "min_reliable_views": 8,   # 믿을 만한 상자의 최소 사진 수(Hypersim 개발 장면 8곳에서 6/8/10 중 선택)
+            "dup_overlap": .5,
+            "outside_weight": 1.}      # <1이면 투영이 검출 밖으로 나가는 것을 덜 벌함(가림 대응)         # 같은 계열 가구끼리 작은 쪽 바닥면의 이 비율 이상 겹치면 중복
+# 같은 가구가 다른 종류로도 잡힌다(소파 → 소파+의자). 계열 안에서 중복을 합친다.
+FAMILY = {"couch": "seat", "chair": "seat", "bench": "seat", "toilet": "seat", "dining table": "table"}
 
 
 def _rot(yaw):
@@ -63,9 +72,12 @@ def project_box(P, cam):
     return np.array([uv[:, 0].min(), uv[:, 1].min(), uv[:, 0].max(), uv[:, 1].max()])
 
 
+OUTWARD = np.array([-1., -1., 1., 1.])
+
+
 def _residuals(params, views, yaw, grounded):
     cx, cz, lw, ld, lh = params[:5]
-    bottom = 0. if grounded else params[5]
+    bottom = params[5] if len(params) > 5 else 0.
     P = corners((cx, cz), np.exp([lw, ld, lh]), yaw, bottom)
     out = []
     for box, cam, use in views:
@@ -73,16 +85,19 @@ def _residuals(params, views, yaw, grounded):
         scale = np.hypot(box[2]-box[0], box[3]-box[1])
         if proj is None:
             out.extend([1.]*int(use.sum())); continue
-        out.extend(((proj-box)/scale)[use])
+        out.extend(((proj-box)*OUTWARD/scale)[use])   # 양수 = 투영이 검출보다 바깥
     return np.asarray(out)
 
 
 def _loss(params, views, yaw, grounded, prior, center0):
     r = _residuals(params, views, yaw, grounded)
     huber = np.where(np.abs(r) < .1, .5*r**2, .1*(np.abs(r)-.05))
+    # 가림 때문에 검출 상자는 실제보다 작게 잡히기 쉽다(하한). 투영이 검출보다 바깥인 쪽은 덜 벌한다.
+    huber = huber*np.where(r > 0, SETTINGS["outside_weight"], 1.)
     size_pen = np.sum(((params[2:5]-np.log(prior))/.35)**2)*.002   # 일반 크기 쪽으로 약하게
     move_pen = np.sum((params[:2]-center0)**2)/(.8**2)*.002
-    return float(huber.mean())+size_pen+move_pen
+    floor_pen = (params[5]/SETTINGS["floor_sigma_m"])**2*SETTINGS["floor_weight"] if grounded and len(params) > 5 else 0.
+    return float(huber.mean())+size_pen+move_pen+floor_pen
 
 
 def _nelder_mead(f, x0, step, iters=600, tol=1e-7):
@@ -148,7 +163,9 @@ def fit_box(instance, views):
             if swap: pw, pd = pd, pw
             x0 = [center0[0], center0[1], np.log(pw), np.log(pd), np.log(ph)]
             step = [.3, .3, .3, .3, .25]
-            if not grounded:
+            if grounded and SETTINGS["floor_mode"] == "soft":
+                x0.append(0.); step.append(.1)
+            elif not grounded:
                 x0.append(max(.0, float(instance["position"][1])-ph/2)); step.append(.2)
             f = lambda q: _loss(q, views, yaw, grounded, np.array([pw, pd, ph]), center0)
             x, v = _nelder_mead(f, x0, step)
@@ -158,7 +175,7 @@ def fit_box(instance, views):
     w, d, h = np.exp(x[2:5])
     if w < d:  # 가로 ≥ 깊이로 정리하고 방향에 90°를 더한다
         w, d, yaw = d, w, yaw+np.pi/2
-    bottom = 0. if grounded else float(x[5])
+    bottom = float(x[5]) if len(x) > 5 else 0.
     r = np.abs(_residuals(x, views, best[2], grounded))
     error = float(np.median(r))
     in_range = all(lo[i]*.85 <= s <= hi[i]*1.15 for i, s in enumerate((w, d, h)))
@@ -197,7 +214,7 @@ def floor_visible(box, points):
     w, h, d = box["size"]
     foot = (np.abs(lx) < w/2*.8) & (np.abs(lz) < d/2*.8) & (P[:, 1] < box["bottom"]+1.1*h)
     n = int(foot.sum())
-    return (float((foot & (P[:, 1] < .06)).sum())/n if n else None), n
+    return (float((foot & (P[:, 1] < box["bottom"]+.06)).sum())/n if n else None), n
 
 
 def fit_boxes(instances, detections_by_photo, cams, labels, points=None, walls=None):
@@ -206,9 +223,17 @@ def fit_boxes(instances, detections_by_photo, cams, labels, points=None, walls=N
     for inst in instances:
         views = associate(inst, detections_by_photo, cams, labels)
         box = fit_box(inst, views)
+        for _ in range(int(SETTINGS["reassociate"])):
+            if box is None: break
+            moved = dict(inst, position=box["center"])
+            again = fit_box(inst, associate(moved, detections_by_photo, cams, labels))
+            if again is None or again["views"] < box["views"]*.8: break
+            box = again
         if box is None:
             inst.pop("box3d", None); continue
-        if points is not None and inst["class"] in SOLID and box["bottom"] == 0:
+        if box["views"] < SETTINGS["min_reliable_views"]:
+            box["reliable"] = False; box["rejected"] = "few_views"
+        if points is not None and inst["class"] in SOLID and PRIORS[inst["class"]][2]:
             frac, n = floor_visible(box, points)
             box["floor_visible"] = None if frac is None else round(frac, 3)
             if frac is not None and n >= MIN_FOOT_POINTS and frac > MAX_FLOOR_VISIBLE:
@@ -220,14 +245,20 @@ def fit_boxes(instances, detections_by_photo, cams, labels, points=None, walls=N
     boxed = sorted([i for i in instances if i.get("box3d", {}).get("reliable")], key=lambda i: -i["box3d"]["views"])
     for k, a in enumerate(boxed):
         for b in boxed[:k]:
-            if b["box3d"]["reliable"] and b["class"] == a["class"] and footprint_iou(a["box3d"], b["box3d"]) > .25:
+            same = b["class"] == a["class"] or (FAMILY.get(a["class"]) and FAMILY.get(a["class"]) == FAMILY.get(b["class"]))
+            if b["box3d"]["reliable"] and same and footprint_overlap(a["box3d"], b["box3d"]) > SETTINGS["dup_overlap"]:
                 a["box3d"]["reliable"] = False; a["box3d"]["rejected"] = "duplicate"; break
     reliable = sum(1 for i in instances if i.get("box3d", {}).get("reliable"))
     return fitted, reliable
 
 
-def footprint_iou(a, b, step=.02):
-    """두 상자 바닥면(회전 포함)의 IoU, 격자 근사."""
+def footprint_overlap(a, b):
+    """작은 쪽 바닥면 대비 겹친 비율."""
+    return footprint_iou(a, b, ratio="min")
+
+
+def footprint_iou(a, b, step=.02, ratio="union"):
+    """두 상자 바닥면(회전 포함)의 IoU(또는 작은 쪽 대비 겹침), 격자 근사."""
     import cv2
     polys = []
     for box in (a, b):
@@ -238,7 +269,9 @@ def footprint_iou(a, b, step=.02):
     for poly in polys:
         m = np.zeros((size[1], size[0]), np.uint8)
         cv2.fillPoly(m, [np.round((poly-low)/step).astype(np.int32)], 1); masks.append(m > 0)
-    return float((masks[0] & masks[1]).sum()/max(1, (masks[0] | masks[1]).sum()))
+    inter = (masks[0] & masks[1]).sum()
+    if ratio == "min": return float(inter/max(1, min(masks[0].sum(), masks[1].sum())))
+    return float(inter/max(1, (masks[0] | masks[1]).sum()))
 
 
 def orient(instances, walls):
