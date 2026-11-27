@@ -16,6 +16,7 @@ import { MeasureTool } from "./measure.js";
 import { Room } from "./room.js";
 import { initIntake, renderAssessment } from "./intake.js";
 import { renderProperty, propertyOverlay, structureModel } from "./property.js";
+import { AIView } from "./aiview.js";
 import * as store from "./storage.js";
 import { EYE_HEIGHT, Walker } from "./walk.js";
 
@@ -42,7 +43,8 @@ viewport.prepend(renderer.domElement, labelRenderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xe9ecf0);
 scene.add(new SparkRenderer({ renderer }));
-scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa5b1, 1.6));
+const hemi = new THREE.HemisphereLight(0xffffff, 0x9aa5b1, 1.6);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 1.3);
 sun.position.set(3, 6, 2);
 scene.add(sun);
@@ -68,6 +70,7 @@ topOrbit.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGH
 topOrbit.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
 topOrbit.enabled = false;
 const walker = new Walker(cam, renderer.domElement);
+const aiView = new AIView({ THREE, scene, renderer, world, cam, orbit, toast: (...a) => toast(...a), baseLights: [hemi, sun] });
 let mode = "orbit";
 let activeCam = cam;
 let orbitPose = null;
@@ -201,6 +204,11 @@ async function loadScene(name) {
       world.add(structure);
     }
   }
+  const aiReady = aiView.build(data);
+  $("ai-toggle").disabled = !aiReady;
+  $("ai-toggle").title = aiReady ? "인식한 벽·문·가구를 깔끔한 모형으로 다시 그려 보기 (A)" : "이 장면에는 공간 분석 결과가 없어 AI 재구성 보기를 쓸 수 없어요";
+  if (aiView.on || document.body.classList.contains("ai")) setAI(aiReady);
+  updateReplayUI();
   renderProperty(data,name,(photo)=>{
     const camera=data.cameras.find(c=>c.name===photo); if (!camera) return;
     setMode('orbit');
@@ -298,6 +306,8 @@ async function loadScene(name) {
 // ------------------------------------------------------------------ display & views
 function applyDisplay() {
   const boxSupported = current.data.layout?.room_box_supported !== false;
+  if (aiView.on) return applyAIDisplay();
+  if (splat) splat.opacity = 1;
   const showSplat = $("show-splat").checked && !!splat;
   if (splat) splat.visible = showSplat;
   if (points) points.visible = $("show-points").checked;
@@ -315,6 +325,52 @@ function applyDisplay() {
     points.material.clippingPlanes = cut ? [pointsClip] : [];
     points.material.needsUpdate = true;
   }
+}
+
+// AI 재구성 보기: 실사·점·윤곽·라벨을 숨기고 AI 모형만(필요하면 실사를 투명하게 겹쳐) 보여 준다.
+function applyAIDisplay() {
+  const blend = Number($("ai-blend").value) / 100;
+  if (splat) { splat.visible = blend > 0; aiView.applyBlend(splat, blend); }
+  if (points) points.visible = false;
+  room.outline.visible = room.shell.visible = false;
+  room.grid.visible = false;
+  for (const o of [observedWalls, houseOverlay, structure, camMarkers]) if (o) o.visible = false;
+  if (ceilingCut) ceilingCut.visible = mode !== "walk";
+}
+
+function setAI(on) {
+  if (on && !aiView.group) { toast("이 장면에는 공간 분석 결과가 없어 AI 재구성 보기를 쓸 수 없어요."); on = false; }
+  if (!on) aiView.stop();
+  aiView.enable(on);
+  document.body.classList.toggle("ai", aiView.on);
+  $("ai-toggle").classList.toggle("on", aiView.on);
+  $("ai-bar").hidden = !aiView.on;
+  $("ai-caption").hidden = !aiView.on;
+  if (aiView.on) {
+    furniture.select(null);
+    if (mode !== "orbit") setMode("orbit");
+    aiView.overview();
+    const fp = current.data.floorplan;
+    const objs = (current.data.objects?.instances ?? []).filter((o) => o.box3d?.display ?? o.box3d?.reliable);
+    const rooms = fp?.rooms?.length ?? current.data.property_graph?.spaces?.length ?? 0;
+    $("ai-caption").innerHTML = `AI 재구성 · 공간 <b>${rooms}</b> · 문 <b>${fp?.doors?.length ?? 0}</b> · 인식 가구 <b>${objs.length}</b>` +
+      (fp?.open_edges?.length ? " · 하늘색 점선 = 벽 근거 없는 관측 경계" : "");
+    $("ai-blend").disabled = !splat;
+    $("ai-blend").closest("label").title = splat ? "실사 3D(촬영 결과)를 AI 모형 위에 겹쳐 비교" : "이 장면에는 실사 3D가 없어요";
+  }
+  applyDisplay();
+  updateReplayUI();
+}
+
+const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+function updateReplayUI(fraction) {
+  const R = aiView.replay, dur = R.path?.duration ?? 0;
+  $("replay-play").disabled = !R.path;
+  $("replay-seek").disabled = !R.path;
+  $("replay-play").textContent = R.playing ? "❚❚ 일시정지" : "▶ 촬영 경로 재생";
+  const f = fraction ?? (dur ? R.t / dur : 0);
+  $("replay-seek").value = Math.round(f * 1000);
+  $("replay-time").textContent = `${fmtTime(f * dur)} / ${fmtTime(dur)}`;
 }
 
 function resetViews() {
@@ -366,6 +422,7 @@ function setMode(m) {
   }
   if (m === mode) return;
   measure.cancel();
+  if (aiView.replay.playing || aiView.replay.savedFov != null) { aiView.stop(); updateReplayUI(); }
   if (mode === "orbit") orbitPose = { pos: cam.position.clone(), target: orbit.target.clone() };
   if (mode === "walk") {
     walker.active = false;
@@ -598,6 +655,8 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (mode === "walk") return;
+  if (e.key === "a" || e.key === "A") return setAI(!aiView.on);
+  if (e.code === "Space" && aiView.on && aiView.hasPath) { e.preventDefault(); return $("replay-play").click(); }
   if (e.key === "1") setMode("orbit");
   if (e.key === "2") setMode("walk");
   if (e.key === "3") setMode("top");
@@ -625,6 +684,28 @@ $("show-structure").addEventListener("change", () => {
   orbit.target.set(c.x, 0, c.z);
   orbit.update();
 });
+$("ai-toggle").onclick = () => setAI(!aiView.on);
+$("ai-overview").onclick = () => { aiView.stop(); updateReplayUI(); if (mode !== "orbit") setMode("orbit"); aiView.overview(); };
+$("ai-blend").oninput = () => { $("ai-blend-v").textContent = `${$("ai-blend").value}%`; applyDisplay(); };
+$("replay-speed").onchange = () => { aiView.replay.speed = Number($("replay-speed").value); };
+$("replay-view").onchange = () => { aiView.setView($("replay-view").value); if (!aiView.replay.playing && aiView.replay.savedFov != null) aiView.release(); };
+$("replay-play").onclick = () => {
+  if (aiView.replay.playing) aiView.pause();
+  else {
+    if (mode !== "orbit") setMode("orbit");
+    furniture.select(null);
+    aiView.play(current.data.intrinsics);
+  }
+  updateReplayUI();
+};
+$("replay-seek").oninput = () => {
+  if (!aiView.replay.path) return;
+  if (mode !== "orbit") setMode("orbit");
+  aiView.replay.playing = false;
+  aiView.seek(Number($("replay-seek").value) / 1000);
+  aiView.release();
+  updateReplayUI();
+};
 $("tool-measure").onclick = () => (measure.kind === "measure" ? measure.cancel() : (setMode(mode === "walk" ? "orbit" : mode), measure.start("measure")));
 $("tool-calibrate").onclick = () => {
   if (measure.kind === "calibrate") return measure.cancel();
@@ -737,9 +818,14 @@ renderer.setAnimationLoop(() => {
   // while a background analysis runs, leaving compute time for training.
   if (processingJob && now - lastDraw < 200) return;
   lastDraw = now;
+  const replay = aiView.update(dt);
+  if (replay) {
+    updateReplayUI(replay.fraction);
+    if (replay.done) toast("촬영 경로 재생을 마쳤어요.");
+  }
   if (mode === "walk") walker.update(dt, bounds());
   else if (mode === "top") topOrbit.update();
-  else orbit.update();
+  else if (!aiView.replay.playing) orbit.update();
   renderer.render(scene, activeCam);
   labelRenderer.render(scene, activeCam);
 });

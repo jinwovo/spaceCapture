@@ -16,7 +16,24 @@
             <button data-mode="walk" title="2">걷기</button>
             <button data-mode="top" title="3">평면도</button>
           </div>
+          <button id="ai-toggle" class="ai-toggle" title="인식한 벽·문·가구를 깔끔한 모형으로 다시 그려 보기 (A)">AI 재구성 보기</button>
         </div>
+        <div id="ai-bar" hidden>
+          <button id="replay-play" class="ai-btn" title="촬영 경로 재생 (Space)">▶ 촬영 경로 재생</button>
+          <input type="range" id="replay-seek" min="0" max="1000" value="0" title="재생 위치" />
+          <span id="replay-time">0:00 / 0:00</span>
+          <select id="replay-speed" title="재생 속도">
+            <option value="0.5">0.5배</option><option value="1" selected>1배</option><option value="2">2배</option><option value="4">4배</option>
+          </select>
+          <select id="replay-view" title="재생 시점">
+            <option value="chase" selected>따라가기 시점</option><option value="eye">촬영자 시점</option>
+          </select>
+          <span class="ai-sep"></span>
+          <label class="ai-blend" title="실사 3D(촬영 결과)를 AI 모형 위에 겹쳐 비교">실사 겹치기
+            <input type="range" id="ai-blend" min="0" max="100" value="0" /><b id="ai-blend-v">0%</b></label>
+          <button id="ai-overview" class="ai-btn ghost" title="집 전체 내려다보기">전체 보기</button>
+        </div>
+        <div id="ai-caption" hidden></div>
         <div id="hint"></div>
         <div id="walk-overlay" hidden>
           <b>클릭하면 걷기 시작</b>
@@ -143,6 +160,7 @@
           <label class="check"><input type="checkbox" id="show-cams" /> 촬영 위치</label>
           <label class="check"><input type="checkbox" id="show-property" checked /> 공간 이름·문</label>
           <label class="check"><input type="checkbox" id="show-structure" /> 구조 모형 (벽 세우기)</label>
+          <p class="note">위쪽 <b>AI 재구성 보기</b>: 인식한 벽·문·가구를 깔끔한 모형으로 다시 그리고, 실사 3D를 겹치거나 촬영 경로를 재생할 수 있어요.</p>
         </section>
 
         <section class="help">
