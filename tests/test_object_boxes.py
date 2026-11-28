@@ -93,5 +93,17 @@ class ObjectBoxTests(unittest.TestCase):
         self.assertLess(np.hypot(cands[0]["position"][0], cands[0]["position"][2]), .45)
 
 
+
+
+class SizeRangeTests(unittest.TestCase):
+    def test_ranges_follow_width_ge_depth(self):
+        from spacecapture.object_boxes import PRIORS, size_range
+        for cls in PRIORS:
+            lo, hi = size_range(cls)
+            self.assertGreaterEqual(lo[0], lo[1]); self.assertGreaterEqual(hi[0], hi[1])
+        lo, hi = size_range("bed")   # 2.6 × 1.6 m 침대(가로 ≥ 깊이로 정리된 결과)는 범위 안
+        self.assertTrue(lo[0]*.85 <= 2.6 <= hi[0]*1.15 and lo[1]*.85 <= 1.6 <= hi[1]*1.15)
+
+
 if __name__ == "__main__":
     unittest.main()

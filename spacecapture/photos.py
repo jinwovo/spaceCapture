@@ -11,6 +11,24 @@ import numpy as np
 EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 
+def taken_at(path: Path) -> str | None:
+    """EXIF 촬영 시각(DateTimeOriginal + 1/100초)을 'YYYY-MM-DDTHH:MM:SS.ss' 문자열로. 없으면 None.
+    촬영 경로 재생 순서에만 쓴다(위치 추정에는 쓰지 않음)."""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            exif = im.getexif()
+            sub = exif.get_ifd(0x8769)
+            raw = sub.get(36867) or exif.get(306)
+            frac = str(sub.get(37521) or "").strip()
+    except Exception:  # noqa: BLE001 - 시각이 없거나 읽을 수 없는 사진
+        return None
+    if not isinstance(raw, str) or len(raw) < 19 or raw.startswith("0000"):
+        return None
+    stamp = raw[:10].replace(":", "-")+"T"+raw[11:19]
+    return stamp+("."+frac[:2].ljust(2, "0") if frac.isdigit() else "")
+
+
 def write_previews(scene_dir: Path, image_dir: Path, cameras: list[dict]) -> None:
     if not image_dir.is_dir():
         return
@@ -60,21 +78,21 @@ def prepare_photos(folder: Path, out_dir: Path, max_photos: int = 150,
             skipped.append({"file": path.name, "reason": "중복 사진"})
             continue
         seen.add(fingerprint)
-        selected.append((path.name, [w, h], image))
+        selected.append((path.name, [w, h], image, taken_at(path)))
     if len(selected) < 3:
         raise RuntimeError("중복·손상 사진을 제외하면 3장 미만이에요. 서로 다른 위치에서 찍은 사진을 추가해 주세요.")
     out_dir.mkdir(parents=True, exist_ok=True)
     for old in out_dir.glob("*.jpg"):
         old.unlink()
     manifest = []
-    for i, (original, original_size, image) in enumerate(selected):
+    for i, (original, original_size, image, when) in enumerate(selected):
         name = f"photo_{i:05d}.jpg"
         ok, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 95])
         if not ok:
             raise RuntimeError(f"사진 변환에 실패했어요: {original}")
         encoded.tofile(out_dir / name)  # Unicode paths work on Windows too.
         manifest.append({"name": name, "original": original, "original_size": original_size,
-                         "size": [image.shape[1], image.shape[0]]})
+                         "size": [image.shape[1], image.shape[0]], **({"taken_at": when} if when else {})})
     info = {"selected": len(manifest), "names": [p["name"] for p in manifest],
             "photos": manifest, "skipped": skipped, "input_count": len(files)}
     (out_dir.parent / "photos.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")

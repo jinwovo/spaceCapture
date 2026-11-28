@@ -46,12 +46,23 @@ SETTINGS = {"floor_mode": "fixed", "floor_sigma_m": .15, "floor_weight": .002,
             "min_reliable_views": 6,   # 믿을 만한 상자의 최소 사진 수(Hypersim 개발 장면에서 선택: 점·중심 중복 규칙과 함께 6)
             "dup_overlap": .5,         # 같은 계열 가구끼리 작은 쪽 바닥면의 이 비율 이상 겹치면 중복
             "outside_weight": 1.,      # <1이면 투영이 검출 밖으로 나가는 것을 덜 벌함(가림 대응)
-            "floor_ray": False, "ray_min_score": .35, "ray_radius_frac": .5,
+            "floor_ray": False,        # 바닥 광선 후보(SfM 점 없이 사물 찾기). 바닥을 잘못 잡은 장면에서 허상이 생겨 끔
+            "ray_min_score": .35, "ray_radius_frac": .5,
+            "ray_min_inside_points": 10,  # 바닥 광선 후보는 상자 안 점 10개 이상
             "min_inside_points": 1,    # 상자 안 SfM 점이 이보다 적으면 믿지 않음(허상 TV 등 점 0개)
-            "ray_min_inside_points": 10,
-            "dup_center_frac": .5}     # 같은 계열 두 상자 중심 거리가 (큰 쪽 가로 × 이 값)보다 가까우면 중복  # 바닥 광선 후보(바닥 오인 시 허상)는 상자 안 점 10개 이상  # 바닥 광선 후보(SfM 점 없이 사물 찾기)
+            "dup_center_frac": .5,     # 같은 계열 두 상자 중심 거리가 (큰 쪽 가로 × 이 값)보다 가까우면 중복
+            "max_edge_error": MAX_ERROR,  # .15/.18로 늘리면 시험 장면에서 늘어난 상자가 모두 오검출
+            "dup_views_ratio": .7}     # 중복 중 사진 수가 상대의 이 비율 이상이면 변 오차가 작은 쪽을 남김(개발 장면에서 .5/.7/.9 비교)
 # 같은 가구가 다른 종류로도 잡힌다(소파 → 소파+의자). 계열 안에서 중복을 합친다.
 FAMILY = {"couch": "seat", "chair": "seat", "bench": "seat", "toilet": "seat", "dining table": "table"}
+
+
+def size_range(cls):
+    """종류별 (최소, 최대) 크기를 결과 상자와 같은 규칙(가로 ≥ 깊이)으로 정리한다.
+    사전값 표의 침대·변기는 (폭, 길이) 순이라 그대로 비교하면 제대로 맞춘 상자도 범위 밖이 된다."""
+    _, (lo, hi), _ = PRIORS[cls]
+    lo_h, hi_h = sorted(lo[:2], reverse=True), sorted(hi[:2], reverse=True)
+    return (lo_h[0], lo_h[1], lo[2]), (hi_h[0], hi_h[1], hi[2])
 
 
 def _rot(yaw):
@@ -157,7 +168,8 @@ def fit_box(instance, views):
     cls = instance["class"]
     if cls not in PRIORS or len(views) < MIN_VIEWS:
         return None
-    prior, (lo, hi), grounded = PRIORS[cls]
+    prior, _, grounded = PRIORS[cls]
+    lo, hi = size_range(cls)
     center0 = np.asarray(instance["position"], float)[[0, 2]]
     yaws = [0., np.pi/4] if cls == "chair" else [0.]
     best = None
@@ -187,7 +199,7 @@ def fit_box(instance, views):
             "size": [round(float(w), 3), round(float(h), 3), round(float(d), 3)],   # 가로(x), 높이(y), 깊이(z) — 회전 전
             "yaw_deg": round(float(np.degrees(yaw)) % 180, 1), "bottom": round(bottom, 3),
             "views": len(views), "edge_error": round(error, 4), "in_class_range": bool(in_range),
-            "reliable": bool(in_range and error <= MAX_ERROR)}
+            "reliable": bool(in_range and error <= SETTINGS["max_edge_error"])}
 
 
 def facing(box, walls):
@@ -311,15 +323,26 @@ def fit_boxes(instances, detections_by_photo, cams, labels, points=None, walls=N
         box["front_xz"] = facing(box, walls or [])
         inst["box3d"] = box
         fitted += 1
-    # 같은 가구가 두 사물로 잡힌 경우(바닥면이 많이 겹침): 사진이 더 많은 쪽만 남긴다
+    # 같은 가구가 두 사물로 잡힌 경우(바닥면이 많이 겹침): 하나만 남긴다. 기본은 사진이 많은 쪽이지만,
+    # 사진 수가 비슷하면(dup_views_ratio 이상) 변 오차가 작은 쪽을 남긴다(작게 잘못 맞춘 상자가 이기지 않게).
     boxed = sorted([i for i in instances if i.get("box3d", {}).get("reliable")], key=lambda i: -i["box3d"]["views"])
-    for k, a in enumerate(boxed):
-        for b in boxed[:k]:
+    kept = []
+    for a in boxed:
+        dup = None
+        for b in kept:
             same = b["class"] == a["class"] or (FAMILY.get(a["class"]) and FAMILY.get(a["class"]) == FAMILY.get(b["class"]))
             ca, cb = np.array(a["box3d"]["center"])[[0, 2]], np.array(b["box3d"]["center"])[[0, 2]]
             close = np.linalg.norm(ca-cb) < SETTINGS["dup_center_frac"]*max(a["box3d"]["size"][0], b["box3d"]["size"][0])
-            if b["box3d"]["reliable"] and same and (close or footprint_overlap(a["box3d"], b["box3d"]) > SETTINGS["dup_overlap"]):
-                a["box3d"]["reliable"] = False; a["box3d"]["rejected"] = "duplicate"; break
+            if same and (close or footprint_overlap(a["box3d"], b["box3d"]) > SETTINGS["dup_overlap"]):
+                dup = b; break
+        if dup is None:
+            kept.append(a); continue
+        better = (a["box3d"]["views"] >= SETTINGS["dup_views_ratio"]*dup["box3d"]["views"]
+                  and a["box3d"]["edge_error"] < dup["box3d"]["edge_error"])
+        loser = dup if better else a
+        loser["box3d"]["reliable"] = False; loser["box3d"]["rejected"] = "duplicate"
+        if better:
+            kept[kept.index(dup)] = a
     reliable = sum(1 for i in instances if i.get("box3d", {}).get("reliable"))
     return fitted, reliable
 

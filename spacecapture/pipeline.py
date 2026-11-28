@@ -351,6 +351,13 @@ def _write_scene(scene_dir: Path, scene: dict) -> None:
         scene["files"]["property_plan"] = "property.svg"
         (scene_dir/"property_graph.json").write_text(json.dumps(scene["property_graph"],ensure_ascii=False,indent=1),encoding="utf-8")
         write_property_svg(scene_dir,scene["property_graph"],scene.get("source",{}).get("title",scene["name"])+" · 공간 연결 후보")
+    try:  # 촬영 경로 재생 순서(영상 프레임 / EXIF 시각 / 짧은 경로 추정)
+        from .capture_path import capture_order
+        path = capture_order(scene.get("cameras", []), scene.get("source", {}).get("photos"),
+                             (scene.get("property_graph") or {}).get("photo_spaces"))
+        if path: scene["capture_path"] = path
+    except Exception as error:  # noqa: BLE001 - 보조 기능
+        scene["capture_path"] = {"method": "failed", "error": str(error)[:200]}
     try:  # 공유 벽선 도면 모델: 2D 도면과 뷰어 구조 모형이 함께 쓴다
         from .plan_model import build as build_floorplan
         plan_points = None

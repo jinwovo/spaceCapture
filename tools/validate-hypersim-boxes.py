@@ -37,8 +37,9 @@ def refit(scene_name, scene):
         if o.get("box3d"): o["box3d"]["display"] = o["box3d"]["reliable"] and o["class"] not in ("refrigerator", "oven", "microwave", "sink")
 
 
-def evaluate(scene_name, gt_dir, do_refit=False):
-    scene = json.loads((ROOT/"scenes"/scene_name/"scene.json").read_text(encoding="utf-8"))
+def evaluate(scene_name, gt_dir, do_refit=False, scene=None):
+    """scene을 주면(실험용 재검출 결과 등) 파일 대신 그것을 평가한다."""
+    if scene is None: scene = json.loads((ROOT/"scenes"/scene_name/"scene.json").read_text(encoding="utf-8"))
     if do_refit: refit(scene_name, scene)
     frames, objects = load(gt_dir)
     cams = [c for c in scene["cameras"] if c.get("source_photo", "").rsplit(".", 1)[0] in frames]
@@ -101,8 +102,8 @@ def _job(task):
 
 def standard_size(row):
     """정답 상자가 해당 종류의 일반 크기 범위(±15%) 안인지(라운지 의자·머리판 포함 침대 등 정의 차이 제외)."""
-    from spacecapture.object_boxes import PRIORS
-    _, (lo, hi), _ = PRIORS[row["class"]]
+    from spacecapture.object_boxes import size_range
+    lo, hi = size_range(row["class"])
     return all(lo[i]*.85 <= s <= hi[i]*1.15 for i, s in enumerate(row["gt_size"]))
 
 

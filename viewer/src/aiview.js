@@ -84,6 +84,7 @@ export class AIView {
       }
     }
     // 촬영 경로(바닥 위 하늘색 선)
+    this.capturePath = data.capture_path;
     this.replay.path = this.buildPath(data.cameras ?? []);
     if (this.replay.path) {
       const pts = this.replay.path.keys.map((k) => new THREE.Vector3(k.pos.x, 0.03, k.pos.z));
@@ -105,7 +106,12 @@ export class AIView {
     const { THREE } = this;
     if (cameras.length < 2) return null;
     let order;
-    if (cameras.filter((c) => c.video_frame != null).length >= cameras.length * 0.8) {
+    const planned = this.capturePath?.names;
+    const byName = new Map(cameras.map((c) => [c.name, c]));
+    if (planned?.length >= 2 && planned.every((n) => byName.has(n))) {
+      // 분석이 정한 순서(영상 프레임 / 사진 촬영 시각 / 방별 짧은 경로)
+      order = planned.map((n) => byName.get(n));
+    } else if (cameras.filter((c) => c.video_frame != null).length >= cameras.length * 0.8) {
       order = [...cameras].sort((a, b) => (a.video_frame ?? 1e9) - (b.video_frame ?? 1e9));
     } else {
       const left = [...cameras]; order = [left.shift()];

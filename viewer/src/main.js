@@ -368,6 +368,9 @@ function updateReplayUI(fraction) {
   $("replay-play").disabled = !R.path;
   $("replay-seek").disabled = !R.path;
   $("replay-play").textContent = R.playing ? "❚❚ 일시정지" : "▶ 촬영 경로 재생";
+  const method = aiView.capturePath?.method;
+  $("replay-play").title = "촬영 경로 재생 (Space)" + ({ video_frame: " · 영상 순서", exif_time: " · 사진 촬영 시각 순서",
+    shortest_path: " · 촬영 순서 정보가 없어 방별로 가까운 사진끼리 이은 추정 경로" }[method] ?? "");
   const f = fraction ?? (dur ? R.t / dur : 0);
   $("replay-seek").value = Math.round(f * 1000);
   $("replay-time").textContent = `${fmtTime(f * dur)} / ${fmtTime(dur)}`;
